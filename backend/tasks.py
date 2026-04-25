@@ -1,8 +1,7 @@
-"""
-Background task executed by the ARQ worker.
-Runs the full Veritas LangGraph pipeline, then sends the verdict
-back to the user via Twilio WhatsApp.
-"""
+import re
+import os
+import httpx
+import base64
 from agent.pipeline import pipeline
 from services.twilio_service import twilio_service
 
@@ -13,8 +12,30 @@ async def analyze_whatsapp_task(
     text: str,
     media_url: str = None,
 ):
-    input_type = "image" if media_url else "text"
-    raw_input = media_url if media_url else text
+    input_type = "text"
+    raw_input = text
+
+    if media_url:
+        try:
+            auth = (os.getenv("TWILIO_ACCOUNT_SID", ""), os.getenv("TWILIO_AUTH_TOKEN", ""))
+            async with httpx.AsyncClient() as client:
+                resp = await client.get(media_url, follow_redirects=True, auth=auth)
+                resp.raise_for_status()
+                raw_input = base64.b64encode(resp.content).decode("utf-8")
+                input_type = "image"
+        except Exception as exc:
+            print(f"[analyze_whatsapp_task] Failed to download media: {exc}")
+            twilio_service.send_whatsapp(
+                to=user_phone,
+                body="❌ Could not download the image. Please try again or send a text/link."
+            )
+            return
+    elif text:
+        # Look for the first URL in the text
+        url_match = re.search(r'(https?://\S+)', text, re.IGNORECASE)
+        if url_match:
+            raw_input = url_match.group(1)
+            input_type = "url"
 
     try:
         # ── Run the pipeline ──────────────────────────────────────────────────
@@ -37,24 +58,32 @@ async def analyze_whatsapp_task(
         else:
             label = "❌ *FALSE*"
 
-        # Shorten explanation to WhatsApp-safe length
-        short_explanation = (
-            explanation[:350] + "…" if len(explanation) > 350 else explanation
-        )
-
-        report_url = (
-            f"https://veritas.app/analyze/{content_hash}"
-            if content_hash
-            else "https://veritas.app"
-        )
-
-        body = "\n".join([
+        body_parts = [
             f"{label} — {int(score * 100)}% credibility",
             "",
-            short_explanation,
-            "",
-            f"📊 Full breakdown: {report_url}",
-        ])
+            explanation,
+        ]
+
+        claims = result.get("claim_results", [])
+        supporting = set()
+        contradictory = set()
+        for claim in claims:
+            for s in claim.get("supporting_sources", []):
+                supporting.add(s)
+            for s in claim.get("contradicting_sources", []):
+                contradictory.add(s)
+
+        if supporting:
+            body_parts.append("\n✅ *Supporting Sources:*")
+            for url in list(supporting)[:5]:
+                body_parts.append(f"• {url}")
+                
+        if contradictory:
+            body_parts.append("\n❌ *Contradictory Sources:*")
+            for url in list(contradictory)[:5]:
+                body_parts.append(f"• {url}")
+
+        body = "\n".join(body_parts)
 
     except Exception as exc:
         print(f"[analyze_whatsapp_task] Pipeline error: {exc}")

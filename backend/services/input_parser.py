@@ -61,8 +61,21 @@ async def fetch_url_text(url: str) -> str:
     lines = [l.strip() for l in text.splitlines() if l.strip()]
     return "\n".join(lines)
 
+from langchain_google_genai import ChatGoogleGenerativeAI
+import os
+
 async def extract_text_from_image(base64_image: str, media_type: str = "image/jpeg") -> str:
     """Use vision LLM to extract text from a news screenshot."""
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        raise ValueError("GEMINI_API_KEY must be set to extract text from images.")
+        
+    vision_model = ChatGoogleGenerativeAI(
+        model="gemini-2.5-flash",
+        google_api_key=api_key,
+        temperature=0.0
+    )
+    
     message = HumanMessage(
         content=[
             {
@@ -75,7 +88,7 @@ async def extract_text_from_image(base64_image: str, media_type: str = "image/jp
             },
         ]
     )
-    response = await model.ainvoke([message])
+    response = await vision_model.ainvoke([message])
     return response.content
 
 def compute_hash(text: str) -> str:

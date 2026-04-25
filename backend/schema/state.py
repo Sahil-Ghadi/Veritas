@@ -94,8 +94,8 @@ class GraphState(TypedDict, total=False):
     # Parallel branches can emit these in the same step; allow safe merge.
     current_claim: Annotated[Optional[dict], take_latest]
     current_search_results: Annotated[List[dict], take_latest]
-    # Fan-in accumulator — operator.add appends each branch's [ClaimResult]
-    claim_results: Annotated[List[dict], operator.add]
+    # Fan-in accumulator — appends each branch's [ClaimResult]
+    claim_results: Annotated[List[dict], lambda x, y: (x or []) + (y or [])]
 
     # ── Output ─────────────────────────────────────────────
     ai_score: Annotated[float, take_latest]

@@ -1,24 +1,30 @@
-import uuid
 import traceback
-from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
-from pydantic import BaseModel, Field
-from typing import Optional, Dict
+import uuid
 from datetime import datetime, timezone
+from typing import Dict, Optional
+
 from core.firebase import db_async
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 from firebase_admin import auth as firebase_auth
+from pydantic import BaseModel, Field
 
 router = APIRouter(prefix="/api", tags=["analyze"])
 
 # Job store (In-memory for now, consider Firestore for persistence)
 _job_store: Dict[str, dict] = {}
 
+
 class AnalyzeRequest(BaseModel):
     input_type: str = Field(..., description="'url' | 'text' | 'image'")
-    raw_input: str = Field(..., description="URL string, plain text, or base64 image data")
+    raw_input: str = Field(
+        ..., description="URL string, plain text, or base64 image data"
+    )
+
 
 class AnalyzeResponse(BaseModel):
     job_id: str
     status: str = "queued"
+
 
 class ResultResponse(BaseModel):
     job_id: str
@@ -131,12 +137,15 @@ async def _sync_user_vote(job_id: str, uid: Optional[str]) -> None:
     if not job:
         return
     post_id = job.get("post_id") or job_id
-    vote_doc = await db_async.collection("post_votes").document(f"{post_id}:{uid}").get()
+    vote_doc = (
+        await db_async.collection("post_votes").document(f"{post_id}:{uid}").get()
+    )
     if vote_doc.exists:
         vote_data = vote_doc.to_dict() or {}
         job["my_vote"] = vote_data.get("vote", "none")
     else:
         job["my_vote"] = "none"
+
 
 async def _run_pipeline(job_id: str, raw_input: str, input_type: str):
     from agent.pipeline import pipeline
@@ -154,6 +163,8 @@ async def _run_pipeline(job_id: str, raw_input: str, input_type: str):
 
     _job_store[job_id]["status"] = "processing"
     _job_store[job_id]["step"] = "Initializing pipeline"
+    print(f"[analyze] Starting pipeline for job {job_id}...")
+
     try:
         initial_state = {
             "raw_input": raw_input,
@@ -161,23 +172,38 @@ async def _run_pipeline(job_id: str, raw_input: str, input_type: str):
             "cached": False,
             "claim_results": [],
         }
-        merged_state = dict(initial_state)
-        async for update in pipeline.astream(initial_state, stream_mode="updates"):
-            for node_name, payload in update.items():
-                step_label = node_to_step.get(node_name)
-                if step_label and job_id in _job_store:
-                    _job_store[job_id]["step"] = step_label
 
-                if not isinstance(payload, dict):
-                    continue
-                for key, value in payload.items():
-                    if key == "claim_results" and isinstance(value, list):
-                        merged_state.setdefault("claim_results", [])
-                        merged_state["claim_results"].extend(value)
-                    else:
-                        merged_state[key] = value
+        # Stream with both "updates" (for progress labels) and "values" (for the
+        # fully-merged state).  Using only "updates" was lossy: when N parallel
+        # `penalty` branches all complete in the same LangGraph superstep they
+        # share the key "penalty" in the update dict, so Python's dict semantics
+        # kept only the LAST branch's claim_result.  "values" gives us the state
+        # AFTER LangGraph has applied every reducer (including the list-concat
+        # reducer on claim_results), so all N results are always present.
+        final_state: dict = dict(initial_state)
+        async for chunk in pipeline.astream(
+            initial_state,  # type: ignore[arg-type]
+            stream_mode=["updates", "values"],
+        ):
+            # Each chunk is a (mode, data) tuple when multiple stream modes are
+            # requested.  The isinstance guards let Pyright narrow data to dict.
+            if not isinstance(chunk, tuple) or len(chunk) != 2:
+                continue
+            mode, data = chunk
+            if mode == "updates" and isinstance(data, dict):
+                for node_name in data:
+                    print(f"[analyze] Node finished: {node_name}")
+                    step_label = node_to_step.get(node_name)
+                    if step_label:
+                        _job_store[job_id]["step"] = step_label
+            elif mode == "values" and isinstance(data, dict):
+                # Always keep the latest fully-merged state from LangGraph so
+                # that claim_results contains every parallel branch's output.
+                final_state = data
 
-        final_state = merged_state
+        print(
+            f"[analyze] Pipeline finished. Results found: {len(final_state.get('claim_results', []))}"
+        )
 
         current_job = _job_store.get(job_id, {})
         _job_store[job_id] = {
@@ -188,7 +214,12 @@ async def _run_pipeline(job_id: str, raw_input: str, input_type: str):
             "created_at": current_job.get("created_at"),
             "cached": bool(final_state.get("cached", False)),
             "content_hash": final_state.get("content_hash"),
-            "post_id": current_job.get("post_id", current_job.get("content_hash") or final_state.get("content_hash") or job_id),
+            "post_id": current_job.get(
+                "post_id",
+                current_job.get("content_hash")
+                or final_state.get("content_hash")
+                or job_id,
+            ),
             "upvotes": current_job.get("upvotes", 0),
             "downvotes": current_job.get("downvotes", 0),
             "disputes": current_job.get("disputes", 0),
@@ -211,8 +242,11 @@ async def _run_pipeline(job_id: str, raw_input: str, input_type: str):
             "error": f"{type(exc).__name__}: {exc}",
         }
 
+
 @router.post("/analyze", response_model=AnalyzeResponse, status_code=202)
-async def analyze(req: AnalyzeRequest, background_tasks: BackgroundTasks, http_req: Request):
+async def analyze(
+    req: AnalyzeRequest, background_tasks: BackgroundTasks, http_req: Request
+):
     if req.input_type not in ("url", "text", "image"):
         raise HTTPException(400, "input_type must be 'url', 'text', or 'image'")
 
@@ -246,6 +280,7 @@ async def analyze(req: AnalyzeRequest, background_tasks: BackgroundTasks, http_r
 
     background_tasks.add_task(_run_pipeline, job_id, req.raw_input, req.input_type)
     return AnalyzeResponse(job_id=job_id)
+
 
 @router.get("/results/{job_id}", response_model=ResultResponse)
 async def get_results(job_id: str, req: Request):

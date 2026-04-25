@@ -8,16 +8,14 @@ from schema.state import (
     EssenceOutput,
     ClaimSplitOutput,
     QueryBuilderOutput,
-    AlignmentOutput,
-    JudgeOutput,
+    EvidenceJudgeOutput,
     ExplanationOutput,
 )
 from core.prompts import (
     ESSENCE_PROMPT,
     CLAIM_SPLIT_PROMPT,
     QUERY_BUILDER_PROMPT,
-    ALIGNMENT_PROMPT,
-    JUDGE_PROMPT,
+    EVIDENCE_JUDGE_PROMPT,
     AGGREGATOR_PROMPT,
 )
 from core.llm_client import model
@@ -164,118 +162,69 @@ async def adversarial_searcher_node(state: GraphState) -> dict:
         }
     }
 
-# Sub-nodes for the LLM Judge Subgraph
-async def alignment_node(state: GraphState) -> dict:
+# Sub-node for the LLM Judge Subgraph
+# Replaces the old alignment_node + judge_node two-step.
+# One LLM call per claim: classifies evidence AND renders verdict simultaneously.
+async def evidence_judge_node(state: GraphState) -> dict:
     claim = state["current_claim"]
     results = state["current_search_results"]
+    essence = state["essence"]
+
+    # Fast-path: no search results — skip LLM entirely
+    if not results:
+        return {
+            "current_search_results": [],
+            "current_claim": {
+                **claim,
+                "has_direct_evidence": False,
+                "verdict": "unverifiable",
+                "confidence": 0.1,
+                "reasoning": "No search results addressed this claim.",
+                "false_detail": None,
+                "uncertainty_reason": None,
+            },
+        }
+
     def extract_text(r: dict) -> str:
-        body = (r.get("content") or r.get("raw_content") or "").strip()
+        body = (r.get("content") or "").strip()
         if body:
             return body[:500]
         title = (r.get("title") or "").strip()
         snippet = (r.get("snippet") or "").strip()
-        if title or snippet:
-            return f"{title}\n{snippet}".strip()[:500]
-        return ""
+        return f"{title}\n{snippet}".strip()[:500]
 
+    # Build a flat evidence block with pre-tagged stances from adversarial_search
     evidence_text = "\n\n".join(
-        f"URL: {r.get('url', '')}\n{extract_text(r)}"
+        f"[Stance: {r.get('stance', 'unknown')}] URL: {r.get('url', '')}\n{extract_text(r)}"
         for r in results
     )
-    prompt = ALIGNMENT_PROMPT.format(
+
+    prompt = EVIDENCE_JUDGE_PROMPT.format(
         claim=claim["text"],
         claim_type=claim.get("type", "fact"),
+        essence=essence,
         evidence=evidence_text,
+        diversity_note="WARNING: Echo chamber detected." if claim.get("echo_chamber_detected") else "Sources appear independent.",
+        contradiction_note="NOTE: No contradiction found." if claim.get("no_contradiction_found") else "Contradicting evidence was searched.",
     )
-    structured_llm = model.with_structured_output(AlignmentOutput)
+    structured_llm = model.with_structured_output(EvidenceJudgeOutput)
     result = await structured_llm.ainvoke(prompt)
 
-    enriched = []
+    # Enrich raw results with the LLM's per-URL classification
     url_to_alignment = {a.url: a.model_dump() for a in result.evidence_alignment}
-    for r in results:
-        meta = url_to_alignment.get(r.get("url", ""), {})
-        enriched.append({**r, **meta})
-
-    # Do not rely only on model-level boolean; infer direct evidence from aligned items too.
-    inferred_direct = any(
-        (r.get("content") or r.get("raw_content") or r.get("title") or r.get("snippet"))
-        and (
-            r.get("relevance") in ("direct", "partial")
-            or r.get("stance") in ("supports", "contradicts", "neutral")
-        )
-        for r in enriched
-    )
+    enriched = [{**r, **url_to_alignment.get(r.get("url", ""), {})} for r in results]
 
     return {
         "current_search_results": enriched,
         "current_claim": {
             **claim,
-            "has_direct_evidence": bool(result.has_direct_evidence or inferred_direct),
-        },
-    }
-
-async def judge_node(state: GraphState) -> dict:
-    claim = state["current_claim"]
-    results = state["current_search_results"]
-    essence = state["essence"]
-
-    supporting = [r for r in results if r.get("stance") == "supports"
-                and r.get("relevance") in ("direct", "partial")]
-    neutral = [r for r in results if r.get("stance") == "neutral"
-                and r.get("relevance") in ("direct", "partial")]
-    contradicting = [r for r in results if r.get("stance") == "contradicts"
-                and r.get("relevance") in ("direct", "partial")]
-
-    def fmt_evidence(items):
-        items = [r for r in items
-                 if (r.get("content") or r.get("raw_content") or "")]
-        if not items: return "None found."
-        return "\n\n".join(
-            f"[{r.get('source_type','secondary').upper()}] {r.get('url','')}\n"
-            f"{r.get('content', r.get('raw_content',''))[:350]}"
-            for r in items
-        )
-
-    has_usable_evidence = any(
-        (r.get("content") or r.get("raw_content") or r.get("title") or r.get("snippet"))
-        and (
-            r.get("relevance") in ("direct", "partial")
-            or r.get("stance") in ("supports", "contradicts", "neutral")
-        )
-        for r in results
-    )
-
-    if not claim.get("has_direct_evidence", True) and not has_usable_evidence:
-        return {
-            "current_claim": {
-                **claim,
-                "verdict": "unverifiable",
-                "confidence": 0.1,
-                "reasoning": "No search results directly addressed this claim.",
-            }
-        }
-
-    prompt = JUDGE_PROMPT.format(
-        claim=claim["text"],
-        claim_type=claim.get("type", "fact"),
-        essence=essence,
-        supporting_evidence=fmt_evidence(supporting),
-        neutral_context=fmt_evidence(neutral),
-        contradicting_evidence=fmt_evidence(contradicting),
-        diversity_note="WARNING: Echo chamber detected." if claim.get("echo_chamber_detected") else "Sources appear independent.",
-        contradiction_note="NOTE: No contradiction found." if claim.get("no_contradiction_found") else "Contradicting evidence was searched.",
-    )
-    structured_llm = model.with_structured_output(JudgeOutput)
-    result = await structured_llm.ainvoke(prompt)
-    return {
-        "current_claim": {
-            **claim,
+            "has_direct_evidence": result.has_direct_evidence,
             "verdict": result.verdict,
             "confidence": result.confidence,
             "false_detail": result.false_detail,
             "reasoning": result.reasoning,
             "uncertainty_reason": result.uncertainty_reason,
-        }
+        },
     }
 
 async def penalty_node(state: GraphState) -> dict:

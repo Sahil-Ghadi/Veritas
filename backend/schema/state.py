@@ -40,6 +40,17 @@ class JudgeOutput(BaseModel):
     reasoning: str
     uncertainty_reason: Optional[str] = None
 
+# Combined output — replaces separate AlignmentOutput + JudgeOutput
+# Lets the LLM classify evidence AND deliver a verdict in one round-trip.
+class EvidenceJudgeOutput(BaseModel):
+    evidence_alignment: List[EvidenceAlignment]
+    has_direct_evidence: bool
+    verdict: Literal["supported", "contradicted", "uncertain", "unverifiable"]
+    confidence: float
+    false_detail: Optional[str] = None
+    reasoning: str
+    uncertainty_reason: Optional[str] = None
+
 class ExplanationOutput(BaseModel):
     explanation: str
 

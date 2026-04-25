@@ -92,64 +92,64 @@ async def create_dispute(current_user: dict, request: DisputeRequest) -> dict:
             "You cannot dispute a claim on your own post.",
         )
 
-    # ── Guard rail 2 — duplicate dispute ──────────────────────────────────────
-    dup_snaps = (
+    # ── Guard rails 2 + 3 — single query, Python-side filtering ──────────────
+    # Firestore requires composite indexes for multi-field queries. To avoid
+    # that operational overhead we fetch ALL disputes by this user (single-field
+    # query, auto-indexed) and apply the duplicate / rate-limit checks in Python.
+    user_dispute_snaps = (
         await db_async.collection("disputes")
-        .where("post_id", "==", post_id)
         .where("disputer_id", "==", user_id)
-        .where("claim_index", "==", claim_index)
         .get()
     )
-    if dup_snaps:
-        raise DisputeError(
-            DisputeErrorCode.ALREADY_DISPUTED,
-            "You have already submitted a dispute for this claim.",
-        )
 
-    # ── Guard rail 3 — daily rate limit (10 disputes per user per day) ─────────
     today_midnight = datetime.now(timezone.utc).replace(
         hour=0, minute=0, second=0, microsecond=0
     )
-    rate_snaps = (
-        await db_async.collection("disputes")
-        .where("disputer_id", "==", user_id)
-        .where("created_at", ">=", today_midnight)
-        .get()
-    )
-    if len(rate_snaps) >= 10:
+
+    today_count = 0
+    for snap in user_dispute_snaps:
+        d = snap.to_dict() or {}
+        # Guard rail 2 — exact duplicate on same post + claim
+        if d.get("post_id") == post_id and d.get("claim_index") == claim_index:
+            raise DisputeError(
+                DisputeErrorCode.ALREADY_DISPUTED,
+                "You have already submitted a dispute for this claim.",
+            )
+        # Guard rail 3 — count today's disputes
+        created = d.get("created_at")
+        if created is not None:
+            if hasattr(created, "tzinfo") and created.tzinfo is None:
+                created = created.replace(tzinfo=timezone.utc)
+            if created >= today_midnight:
+                today_count += 1
+
+    if today_count >= 10:
         raise DisputeError(
             DisputeErrorCode.RATE_LIMIT_REACHED,
             "You have reached the daily limit of 10 disputes. Try again tomorrow.",
         )
 
-    # ── Guard rail 4 — account age (minimum 7 days) ────────────────────────────
-    user_snap = await db_async.collection("users").document(user_id).get()
-    _user_raw: dict[str, Any] | None = user_snap.to_dict() if user_snap.exists else None
-    user_data: dict[str, Any] = _user_raw if _user_raw is not None else {}
-    user_created_at = user_data.get("created_at")
-
-    if user_created_at is not None:
-        # Firestore returns DatetimeWithNanoseconds (timezone-aware).
-        # Guard against naive datetimes just in case.
-        if hasattr(user_created_at, "tzinfo") and user_created_at.tzinfo is None:
-            user_created_at = user_created_at.replace(tzinfo=timezone.utc)
-
-        account_age = datetime.now(timezone.utc) - user_created_at
-        if account_age.total_seconds() < 1 * 24 * 3600:
-            raise DisputeError(
-                DisputeErrorCode.ACCOUNT_TOO_NEW,
-                "Your account must be at least 1 day old to submit a dispute.",
-            )
-
     # ── Guard rail 5 — post flood protection (20 disputes/hour cap) ────────────
+    # Fetch all disputes for this post and filter by timestamp in Python
+    # to avoid needing a composite index on (post_id, created_at).
     one_hour_ago = datetime.now(timezone.utc) - timedelta(hours=1)
-    flood_snaps = (
+    post_dispute_snaps = (
         await db_async.collection("disputes")
         .where("post_id", "==", post_id)
-        .where("created_at", ">=", one_hour_ago)
         .get()
     )
-    if len(flood_snaps) >= 20:
+
+    recent_disputes_count = 0
+    for snap in post_dispute_snaps:
+        d = snap.to_dict() or {}
+        created = d.get("created_at")
+        if created is not None:
+            if hasattr(created, "tzinfo") and created.tzinfo is None:
+                created = created.replace(tzinfo=timezone.utc)
+            if created >= one_hour_ago:
+                recent_disputes_count += 1
+
+    if recent_disputes_count >= 20:
         # Mark the post as under_review so the frontend can surface a warning.
         await post_ref.update({"under_review": True})
         raise DisputeError(

@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field
 # --- Structured Output Models ---
 
 class EssenceOutput(BaseModel):
+    is_verifiable: bool = Field(..., description="False if this is a personal, anonymous, or non-news statement (e.g. 'I am sick'). True if it makes a checkable public claim.")
     essence: str = Field(..., description="One sentence capturing what the article is alleging")
     framing_tone: Literal["alarmist", "neutral", "misleading", "satirical", "opinion"]
     primary_actor: str = Field(..., description="Who the article is about")
@@ -94,6 +95,7 @@ class GraphState(TypedDict, total=False):
     parsed_text: Annotated[str, take_latest]
 
     # ── Essence ────────────────────────────────────────────
+    is_verifiable: Annotated[bool, take_latest]
     essence: Annotated[str, take_latest]
     framing_tone: Annotated[str, take_latest]
     primary_actor: Annotated[str, take_latest]

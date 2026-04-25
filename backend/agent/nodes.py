@@ -84,12 +84,34 @@ async def essence_extractor_node(state: GraphState) -> dict:
     prompt = ESSENCE_PROMPT.format(article_text=state["parsed_text"][:6000])
     structured_llm = model.with_structured_output(EssenceOutput)
     result = await structured_llm.ainvoke(prompt)
-    return {
+    out = {
+        "is_verifiable": result.is_verifiable,
         "essence": result.essence,
         "framing_tone": result.framing_tone,
         "primary_actor": result.primary_actor,
         "implied_consequence": result.implied_consequence,
     }
+    if not result.is_verifiable and state.get("input_type") == "text":
+        out["claim_results"] = [{
+            "claim": "The provided text is a personal, anonymous, or non-news statement.",
+            "claim_type": "fact",
+            "verdict": "unverifiable",
+            "confidence": 1.0,
+            "reasoning": "This text does not contain public, verifiable claims or news. It appears to be a personal statement or conversational text.",
+            "echo_chamber_detected": False,
+            "supporting_sources": [],
+            "contradicting_sources": []
+        }]
+        out["ai_score"] = 0.5
+        out["score_breakdown"] = {"total_claims": 0, "fact_score": 0.5, "framing_score": 0.5}
+        out["article_level_explanation"] = (
+            "The provided text does not contain any checkable public claims or news events. "
+            "Our system is designed to fact-check news, public allegations, and objective claims—not "
+            "personal statements, opinions, or everyday conversational text. Please provide an article, "
+            "news excerpt, or a verifiable public claim."
+        )
+        
+    return out
 
 # Node 4 — Claim Splitter
 async def claim_splitter_node(state: GraphState) -> dict:

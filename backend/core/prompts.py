@@ -2,6 +2,7 @@ ESSENCE_PROMPT = """
 You are a senior editor. Read this article and extract its core narrative.
 
 Return:
+- is_verifiable: False if this is a personal, anonymous, or non-news statement (e.g., 'I am sick'). True if it makes a checkable public claim.
 - essence: A 2-3 sentence summary of the article's central argument or event
 - framing_tone: one of [neutral, alarmist, sympathetic, dismissive, sensationalist]
 - primary_actor: the main person, organization, or country the article is about

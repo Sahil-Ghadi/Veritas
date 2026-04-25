@@ -230,6 +230,22 @@ export async function getAllAnalyses(): Promise<Analysis[]> {
 export async function getAnalysisById(id: string): Promise<Analysis | null> {
   const result = await getAnalysisResult(id);
   if (result.status !== "done" || !result.result) return null;
+  // Also try to pull fresh social counts from the list endpoint for this post
+  // so that upvotes/downvotes/disputes reflect live data on the detail page.
+  let upvotes = 0, downvotes = 0, disputes = 0;
+  try {
+    const authHeader = await getAuthHeader();
+    const allItems = await request<AnalysisListItem[]>("/api/results", { headers: { ...authHeader } });
+    const postId = result.post_id || result.job_id;
+    const match = allItems.find((i) => i.post_id === postId || i.job_id === id);
+    if (match) {
+      upvotes = match.upvotes ?? 0;
+      downvotes = match.downvotes ?? 0;
+      disputes = match.disputes ?? 0;
+    }
+  } catch {
+    // non-critical — social counts will just show 0
+  }
   return toAnalysis({
     job_id: result.job_id,
     status: result.status,
@@ -238,6 +254,9 @@ export async function getAnalysisById(id: string): Promise<Analysis | null> {
     content_hash: result.content_hash,
     submitted_by: result.submitted_by,
     my_vote: result.my_vote,
+    upvotes,
+    downvotes,
+    disputes,
     result: result.result,
   });
 }

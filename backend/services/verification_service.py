@@ -20,7 +20,7 @@ from urllib.parse import urlparse
 from pydantic import BaseModel, Field
 
 from core.llm_client import model
-from services.web_search import _search  # internal Tavily helper
+from services.input_parser import fetch_url_text
 
 logger = logging.getLogger(__name__)
 
@@ -98,13 +98,18 @@ def _build_adjudication_prompt(
     counter_argument: str,
     counter_source_url: Optional[str],
     source_credibility: float,
-    evidence_text: str,
+    source_content: Optional[str],
 ) -> str:
     credibility_label = (
         "HIGH" if source_credibility >= 0.75
         else "LOW" if source_credibility <= 0.25
         else "MODERATE"
     )
+    
+    source_section = ""
+    if source_content:
+        source_section = f"\n\n─── COUNTER-SOURCE CONTENT ───\n{source_content[:2000]}"
+        
     return f"""\
 You are an impartial fact-check adjudicator reviewing a dispute against an \
 AI-generated claim verdict.
@@ -120,24 +125,21 @@ AI-generated claim verdict.
 
 ─── COUNTER-SOURCE ───
 URL: {counter_source_url or "None provided"}
-Domain credibility: {credibility_label} ({source_credibility:.2f}/1.0)
-
-─── EXTERNAL EVIDENCE (retrieved via web search) ───
-{evidence_text}
+Domain credibility: {credibility_label} ({source_credibility:.2f}/1.0){source_section}
 
 ─── ADJUDICATION RULES ───
 Accept the dispute (dispute_valid=true) ONLY if ALL of the following hold:
   1. The counter-argument presents a specific, falsifiable challenge — not
      just a general disagreement or emotional reaction.
-  2. At least one piece of external evidence meaningfully supports the
-     counter-argument OR the counter-source domain is HIGH credibility.
-  3. The source credibility is not LOW (≤ 0.25) unless the external evidence
-     is overwhelmingly supportive.
+  2. The counter-argument points out a logical flaw in the original verdict OR
+     the counter-source domain is HIGH/MODERATE credibility OR the counter-source 
+     content provides strong evidence.
+  3. The source credibility is not LOW (≤ 0.25) unless the provided content
+     overwhelmingly supports the counter-argument.
 
 Reject the dispute (dispute_valid=false) if:
   • The counter-argument is vague, purely opinion-based, or lacks specifics.
-  • No external evidence supports it and the source credibility is LOW/MODERATE.
-  • The evidence contradicts the counter-argument.
+  • The source credibility is LOW and no strong evidence is found in the content.
 
 Set confidence proportionally to how clear-cut the decision is.
 Suggest new_verdict from: SUPPORTED, CONTESTED, CONTRADICTED, UNVERIFIABLE.
@@ -170,7 +172,7 @@ async def verify_dispute(
             source_credibility  (float)  – domain credibility score used
         }
     """
-    # ── Step 1: Domain credibility ─────────────────────────────────────────
+    # ── Step 1: Domain credibility + Content fetching ──────────────────────
     source_credibility = _score_domain(counter_source_url)
     logger.info(
         "verify_dispute | source_credibility=%.2f url=%s",
@@ -178,32 +180,21 @@ async def verify_dispute(
         counter_source_url,
     )
 
-    # ── Step 2: Evidence search ────────────────────────────────────────────
-    # Search for evidence relevant to the counter-argument + original claim.
-    search_query = f"{counter_argument} {claim_text}"
-    try:
-        evidence_results = await _search(search_query, max_results=5)
-    except Exception as exc:
-        logger.warning("Tavily search failed during verification: %s", exc)
-        evidence_results = []
+    source_content = None
+    if counter_source_url:
+        try:
+            source_content = await fetch_url_text(counter_source_url)
+        except Exception as exc:
+            logger.warning("Failed to fetch counter_source_url %s: %s", counter_source_url, exc)
 
-    if evidence_results:
-        evidence_text = "\n\n".join(
-            f"[{r.get('url', 'unknown')}]\n"
-            f"{(r.get('raw_content') or r.get('content', ''))[:400]}"
-            for r in evidence_results
-        )
-    else:
-        evidence_text = "No external evidence could be retrieved."
-
-    # ── Step 3: LLM adjudication ───────────────────────────────────────────
+    # ── Step 2: LLM adjudication ───────────────────────────────────────────
     prompt = _build_adjudication_prompt(
         claim_text=claim_text,
         current_verdict=current_verdict,
         counter_argument=counter_argument,
         counter_source_url=counter_source_url,
         source_credibility=source_credibility,
-        evidence_text=evidence_text,
+        source_content=source_content,
     )
 
     structured_llm = model.with_structured_output(VerificationOutput)

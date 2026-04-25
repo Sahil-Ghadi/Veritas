@@ -7,12 +7,15 @@ import { NavigationSidebar } from "@/components/NavigationSidebar";
 import { ActivitySidebar } from "@/components/ActivitySidebar";
 import { AnalysisResult } from "@/components/AnalysisResult";
 import { getAnalysisById, submitDispute } from "@/lib/api";
+import { auth } from "@/lib/firebase";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
-import { ArrowLeft, MessageSquareWarning, Send } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { ArrowLeft, MessageSquareWarning, Send, LogIn, AlertCircle, CheckCircle2, Loader2 } from "lucide-react";
 import { Analysis } from "@/lib/types";
+import { cn } from "@/lib/utils";
 
 const AnalysisDetail = () => {
   const params = useParams();
@@ -23,8 +26,18 @@ const AnalysisDetail = () => {
 
   const [disputeText, setDisputeText] = useState("");
   const [disputeUrl, setDisputeUrl] = useState("");
-  const [phase, setPhase] = useState<"idle" | "running" | "result" | "error">("idle");
+  const [claimIndex, setClaimIndex] = useState(0);
+  const [phase, setPhase] = useState<"idle" | "running" | "result" | "rejected" | "error">("idle");
   const [disputeMessage, setDisputeMessage] = useState("");
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
+
+  // Track auth state
+  useEffect(() => {
+    const unsubscribe = auth.onAuthStateChanged((user) => {
+      setIsAuthenticated(!!user);
+    });
+    return unsubscribe;
+  }, []);
 
   useEffect(() => {
     const load = async () => {
@@ -44,26 +57,42 @@ const AnalysisDetail = () => {
     if (id) void load();
   }, [id]);
 
+  const MIN_ARGUMENT_LENGTH = 20;
+  const argumentTooShort = disputeText.trim().length > 0 && disputeText.trim().length < MIN_ARGUMENT_LENGTH;
+  const canSubmit = isAuthenticated && disputeText.trim().length >= MIN_ARGUMENT_LENGTH;
+
   const submitDisputeHandler = async () => {
-    if (!disputeText.trim()) return;
+    if (!canSubmit) return;
+    if (!auth.currentUser) {
+      setDisputeMessage("You must be signed in to submit a dispute.");
+      setPhase("error");
+      return;
+    }
     setPhase("running");
     setDisputeMessage("");
     try {
+      // Use the Firestore post_id (not the job_id in the URL)
+      const postId = analysis?.postId || id;
       const response = await submitDispute({
-        post_id: id,
-        claim_index: 0,
+        post_id: postId,
+        claim_index: claimIndex,
         dispute_type: "VERDICT",
         counter_argument: disputeText.trim(),
         counter_source_url: disputeUrl.trim() || undefined,
       });
-      setDisputeMessage(
-        response.status === "VALIDATED"
-          ? `Dispute validated. New score: ${Math.round((response.new_score || 0) * 100)}%`
-          : response.reason || "Dispute submitted."
-      );
-      setPhase("result");
+      if (response.status === "VALIDATED") {
+        setDisputeMessage(
+          `Your dispute was validated! New credibility score: ${Math.round((response.new_score || 0) * 100)}%.`
+        );
+      } else {
+        setDisputeMessage(
+          response.reason || "Your dispute was reviewed but could not be validated at this time."
+        );
+      }
+      setPhase(response.status === "VALIDATED" ? "result" : "rejected");
     } catch (err) {
-      setDisputeMessage(err instanceof Error ? err.message : "Failed to submit dispute.");
+      const msg = err instanceof Error ? err.message : "Failed to submit dispute.";
+      setDisputeMessage(msg);
       setPhase("error");
     }
   };
@@ -109,62 +138,168 @@ const AnalysisDetail = () => {
                 <h2 className="font-serif text-2xl md:text-3xl font-semibold">Dispute this analysis</h2>
               </div>
               <p className="text-muted-foreground mb-6 max-w-2xl">
-                Found contradictory evidence or think a claim was misjudged? Submit your counter-evidence and we'll re-run the pipeline with your input included.
+                Found contradictory evidence or think a claim was misjudged? Submit your counter-evidence and our pipeline will re-evaluate it with your input.
               </p>
 
-              {phase === "idle" && (
-                <Card className="p-6 bg-gradient-card border-warning/30 space-y-4">
-                  <div className="space-y-2">
+              {/* Not signed in */}
+              {isAuthenticated === false && (
+                <Card className="p-6 border-border/50 bg-muted/20 flex flex-col sm:flex-row items-start sm:items-center gap-4">
+                  <LogIn className="h-5 w-5 text-muted-foreground shrink-0" />
+                  <div className="flex-1">
+                    <p className="font-semibold">Sign in to submit a dispute</p>
+                    <p className="text-sm text-muted-foreground mt-0.5">You must have a verified account to challenge an analysis result.</p>
+                  </div>
+                  <Button asChild size="sm">
+                    <Link href="/auth">Sign in</Link>
+                  </Button>
+                </Card>
+              )}
+
+              {/* Idle form — show only when authenticated */}
+              {isAuthenticated && phase === "idle" && (
+                <Card className="p-6 bg-gradient-card border-warning/30 space-y-5">
+                  {/* Claim selector (only shown if there are multiple claims) */}
+                  {analysis.claims.length > 1 && (
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">Which claim are you disputing?</label>
+                      <Select
+                        value={String(claimIndex)}
+                        onValueChange={(v) => setClaimIndex(Number(v))}
+                      >
+                        <SelectTrigger className="bg-background/50">
+                          <SelectValue placeholder="Select a claim" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {analysis.claims.map((claim, i) => (
+                            <SelectItem key={i} value={String(i)}>
+                              <span className="text-xs font-mono text-muted-foreground mr-2">#{i + 1}</span>
+                              {claim.text.length > 80 ? claim.text.slice(0, 80) + "…" : claim.text}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
+
+                  <div className="space-y-1.5">
                     <label className="text-sm font-medium">Your counter-claim or correction</label>
                     <Textarea
-                      placeholder="Describe what you believe is incorrect and why..."
+                      placeholder="Describe what you believe is incorrect and why... (minimum 20 characters)"
                       value={disputeText}
                       onChange={(e) => setDisputeText(e.target.value)}
-                      className="min-h-[120px] bg-background/50"
+                      className={cn(
+                        "min-h-[120px] bg-background/50 transition-colors",
+                        argumentTooShort && "border-destructive/60 focus-visible:ring-destructive/30"
+                      )}
                     />
+                    <div className="flex items-center justify-between">
+                      {argumentTooShort ? (
+                        <p className="text-xs text-destructive flex items-center gap-1">
+                          <AlertCircle className="h-3 w-3" />
+                          At least {MIN_ARGUMENT_LENGTH} characters required ({disputeText.trim().length}/{MIN_ARGUMENT_LENGTH})
+                        </p>
+                      ) : (
+                        <span />
+                      )}
+                      <span className={cn(
+                        "text-xs font-mono text-muted-foreground",
+                        disputeText.trim().length >= MIN_ARGUMENT_LENGTH && "text-success"
+                      )}>
+                        {disputeText.trim().length} chars
+                      </span>
+                    </div>
                   </div>
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">Source URL (optional)</label>
+
+                  <div className="space-y-1.5">
+                    <label className="text-sm font-medium">Source URL <span className="text-muted-foreground font-normal">(optional but recommended)</span></label>
                     <Input
                       placeholder="https://..."
                       value={disputeUrl}
                       onChange={(e) => setDisputeUrl(e.target.value)}
                       className="bg-background/50"
                     />
+                    <p className="text-xs text-muted-foreground">A credible source URL significantly improves your dispute's chances of being validated.</p>
                   </div>
+
                   <Button
                     onClick={submitDisputeHandler}
-                    disabled={!disputeText.trim()}
+                    disabled={!canSubmit}
                     className="bg-gradient-accent text-accent-foreground hover:opacity-90 shadow-accent-glow"
                   >
-                    <Send className="h-4 w-4" /> Submit & re-run pipeline
+                    <Send className="h-4 w-4" /> Submit &amp; re-evaluate
                   </Button>
                 </Card>
               )}
 
+              {/* Running */}
               {phase === "running" && (
-                <Card className="p-4 bg-warning/5 border-warning/30 text-sm">
-                  <p className="font-medium">Submitting dispute...</p>
+                <Card className="p-6 bg-warning/5 border-warning/30">
+                  <div className="flex items-center gap-3">
+                    <Loader2 className="h-5 w-5 text-warning animate-spin" />
+                    <div>
+                      <p className="font-semibold">Evaluating your dispute...</p>
+                      <p className="text-sm text-muted-foreground mt-0.5">Our pipeline is reviewing your counter-evidence. This may take a moment.</p>
+                    </div>
+                  </div>
                 </Card>
               )}
 
+              {/* Validated */}
               {phase === "result" && (
                 <Card className="p-6 bg-success/5 border-success/30">
-                  <p className="font-semibold text-success">Dispute submitted</p>
-                  <p className="text-sm text-muted-foreground mt-2">{disputeMessage}</p>
-                  <Button size="sm" variant="outline" className="mt-4" onClick={() => { setPhase("idle"); setDisputeText(""); setDisputeUrl(""); }}>
-                    Submit another
-                  </Button>
+                  <div className="flex items-start gap-3">
+                    <CheckCircle2 className="h-5 w-5 text-success mt-0.5 shrink-0" />
+                    <div className="flex-1">
+                      <p className="font-semibold text-success">Dispute validated</p>
+                      <p className="text-sm text-muted-foreground mt-1">{disputeMessage}</p>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="mt-4"
+                        onClick={() => { setPhase("idle"); setDisputeText(""); setDisputeUrl(""); }}
+                      >
+                        Submit another dispute
+                      </Button>
+                    </div>
+                  </div>
                 </Card>
               )}
 
+              {/* Rejected (valid submission, not accepted by AI) */}
+              {phase === "rejected" && (
+                <Card className="p-6 bg-warning/5 border-warning/30">
+                  <div className="flex items-start gap-3">
+                    <AlertCircle className="h-5 w-5 text-warning mt-0.5 shrink-0" />
+                    <div className="flex-1">
+                      <p className="font-semibold text-warning">Dispute not validated</p>
+                      <p className="text-sm text-muted-foreground mt-1">{disputeMessage}</p>
+                      <p className="text-xs text-muted-foreground mt-2">Try providing a more specific argument or a credible source URL to strengthen your case.</p>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="mt-4"
+                        onClick={() => { setPhase("idle"); setDisputeText(""); setDisputeUrl(""); }}
+                      >
+                        Try again with more evidence
+                      </Button>
+                    </div>
+                  </div>
+                </Card>
+              )}
+
+              {/* Error */}
               {phase === "error" && (
                 <Card className="p-6 bg-destructive/5 border-destructive/30">
-                  <p className="font-semibold text-destructive">Dispute failed</p>
-                  <p className="text-sm text-muted-foreground mt-2">{disputeMessage}</p>
-                  <Button size="sm" variant="outline" className="mt-4" onClick={() => setPhase("idle")}>
-                    Try again
-                  </Button>
+                  <div className="flex items-start gap-3">
+                    <AlertCircle className="h-5 w-5 text-destructive mt-0.5 shrink-0" />
+                    <div className="flex-1">
+                      <p className="font-semibold text-destructive">Submission failed</p>
+                      <p className="text-sm text-muted-foreground mt-1">{disputeMessage}</p>
+                      <Button size="sm" variant="outline" className="mt-4" onClick={() => setPhase("idle")}>
+                        Try again
+                      </Button>
+                    </div>
+                  </div>
                 </Card>
               )}
             </section>

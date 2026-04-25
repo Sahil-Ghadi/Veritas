@@ -41,7 +41,17 @@ def build_pipeline():
 
     # ── Linear pre-processing ──────────────────────────────
     workflow.add_edge("input_parser", "essence_extractor")
-    workflow.add_edge("essence_extractor", "claim_splitter")
+
+    def check_verifiable(state: GraphState):
+        if not state.get("is_verifiable", True) and state.get("input_type") == "text":
+            return "cache_writer"
+        return "claim_splitter"
+
+    workflow.add_conditional_edges(
+        "essence_extractor",
+        check_verifiable,
+        {"cache_writer": "cache_writer", "claim_splitter": "claim_splitter"}
+    )
 
     # ── Fan-out: claim_splitter → N parallel claim branches ─
     # claim_router_node returns List[Send("query_builder", per_claim_state)]

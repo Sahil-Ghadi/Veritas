@@ -13,7 +13,8 @@ def _get_tavily() -> AsyncTavilyClient:
     return AsyncTavilyClient(api_key=api_key)
 
 
-async def _search(query: str, max_results: int = 4) -> list[dict]:
+async def search(query: str, max_results: int = 4) -> list[dict]:
+    """Run a single Tavily search query and return raw result list."""
     client = _get_tavily()
     try:
         resp = await client.search(
@@ -25,6 +26,9 @@ async def _search(query: str, max_results: int = 4) -> list[dict]:
     except Exception as e:
         print(f"[Search error] {query}: {e}")
         return []
+
+# Keep private alias for internal use within this module
+_search = search
 
 
 async def adversarial_search(

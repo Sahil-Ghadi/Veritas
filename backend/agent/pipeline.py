@@ -35,8 +35,14 @@ def build_pipeline():
 
     # Set up edges
     workflow.set_entry_point("cache_check")
-    
-    workflow.add_edge("cache_check", "input_parser")
+
+    # Cache hit  → skip straight to score_aggregator (claim_results already loaded)
+    # Cache miss → full pipeline from input_parser
+    workflow.add_conditional_edges(
+        "cache_check",
+        lambda state: "score_aggregator" if state.get("cached") else "input_parser",
+        {"score_aggregator": "score_aggregator", "input_parser": "input_parser"},
+    )
     workflow.add_edge("input_parser", "essence_extractor")
     workflow.add_edge("essence_extractor", "claim_splitter")
     

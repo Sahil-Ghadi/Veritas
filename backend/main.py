@@ -1,9 +1,9 @@
 import uvicorn
 from core.config import get_settings
-from core.firebase import init_firebase
+import core.firebase  # noqa: F401 — triggers SDK init on import
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from routes import auth, dispute
+from routes import auth, analyze, dispute
 
 settings = get_settings()
 
@@ -27,6 +27,7 @@ async def startup():
 
 # ── Routes ────────────────────────────────────────────────────────────────────
 app.include_router(auth.router, prefix="/auth")
+app.include_router(analyze.router)          # prefix already set in router (/api)
 app.include_router(dispute.router, prefix="/api")
 
 

@@ -1,26 +1,25 @@
-import { useEffect, useState } from "react";
 import { CheckCircle2, Loader2, Search, Sparkles, ScanLine, Scale } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const STEPS = [
-  { id: 1, label: "Extracting content", icon: ScanLine },
-  { id: 2, label: "Identifying claims", icon: Search },
-  { id: 3, label: "Cross-referencing sources", icon: Sparkles },
-  { id: 4, label: "Scoring credibility", icon: Scale },
-  { id: 5, label: "Generating verdict", icon: CheckCircle2 },
+  { id: "Queued", label: "Queued", icon: Loader2 },
+  { id: "Initializing pipeline", label: "Initializing pipeline", icon: Loader2 },
+  { id: "Checking cache", label: "Checking cache", icon: Loader2 },
+  { id: "Extracting content", label: "Extracting content", icon: ScanLine },
+  { id: "Extracting essence", label: "Extracting essence", icon: Sparkles },
+  { id: "Identifying claims", label: "Identifying claims", icon: Search },
+  { id: "Building search queries", label: "Building search queries", icon: Search },
+  { id: "Cross-referencing sources", label: "Cross-referencing sources", icon: Sparkles },
+  { id: "Evaluating evidence", label: "Evaluating evidence", icon: Sparkles },
+  { id: "Scoring credibility", label: "Scoring credibility", icon: Scale },
+  { id: "Generating verdict", label: "Generating verdict", icon: CheckCircle2 },
+  { id: "Finalizing result", label: "Finalizing result", icon: CheckCircle2 },
+  { id: "Completed", label: "Completed", icon: CheckCircle2 },
 ];
 
-export const AnalysisProgress = ({ onComplete }: { onComplete: () => void }) => {
-  const [step, setStep] = useState(0);
-
-  useEffect(() => {
-    if (step >= STEPS.length) {
-      const t = setTimeout(onComplete, 400);
-      return () => clearTimeout(t);
-    }
-    const t = setTimeout(() => setStep(step + 1), 700);
-    return () => clearTimeout(t);
-  }, [step, onComplete]);
+export const AnalysisProgress = ({ currentStep }: { currentStep?: string }) => {
+  const activeStep = currentStep || "Queued";
+  const activeIndex = Math.max(STEPS.findIndex((s) => s.id === activeStep), 0);
 
   return (
     <div className="bg-gradient-card border border-border/60 rounded-2xl p-8 shadow-elegant animate-scale-in">
@@ -35,8 +34,8 @@ export const AnalysisProgress = ({ onComplete }: { onComplete: () => void }) => 
       <div className="space-y-3">
         {STEPS.map((s, i) => {
           const Icon = s.icon;
-          const done = i < step;
-          const active = i === step;
+          const done = i < activeIndex;
+          const active = i === activeIndex;
           return (
             <div
               key={s.id}

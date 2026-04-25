@@ -12,7 +12,7 @@ from .nodes import (
     cache_writer_node,
 )
 from .llm_judge_subgraph import judge_subgraph
-from ..schema.state import GraphState
+from schema.state import GraphState
 
 def build_pipeline():
     # 1. Main Graph

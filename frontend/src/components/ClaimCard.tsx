@@ -1,4 +1,4 @@
-import { Claim } from "@/lib/mockData";
+import { Claim } from "@/lib/types";
 import { Card } from "@/components/ui/card";
 import { VerdictBadge } from "./VerdictBadge";
 import { CredibilityMeter } from "./CredibilityMeter";

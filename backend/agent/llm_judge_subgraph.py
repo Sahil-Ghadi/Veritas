@@ -1,6 +1,6 @@
 from langgraph.graph import StateGraph, END
 from .nodes import alignment_node, judge_node, penalty_node
-from ..schema.state import GraphState
+from schema.state import GraphState
 
 def build_judge_subgraph():
     """

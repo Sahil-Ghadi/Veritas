@@ -2,8 +2,8 @@ import asyncio
 import hashlib
 from datetime import datetime, timezone, timedelta
 from typing import Any, List
-from ..core.firebase import db_async
-from ..schema.state import (
+from core.firebase import db_async
+from schema.state import (
     GraphState,
     EssenceOutput,
     ClaimSplitOutput,
@@ -12,7 +12,7 @@ from ..schema.state import (
     JudgeOutput,
     ExplanationOutput,
 )
-from ..core.prompts import (
+from core.prompts import (
     ESSENCE_PROMPT,
     CLAIM_SPLIT_PROMPT,
     QUERY_BUILDER_PROMPT,
@@ -20,10 +20,10 @@ from ..core.prompts import (
     JUDGE_PROMPT,
     AGGREGATOR_PROMPT,
 )
-from ..core.llm_client import model
-from ..services.input_parser import parse_input
-from ..services.web_search import adversarial_search
-from ..services.essence_guard import check_essence_drift
+from core.llm_client import model
+from services.input_parser import parse_input
+from services.web_search import adversarial_search
+from services.essence_guard import check_essence_drift
 
 _CACHE_COLLECTION = "analysis_cache"
 _CACHE_TTL_DAYS = 7

@@ -1,7 +1,9 @@
 import uuid
+import traceback
 from fastapi import APIRouter, BackgroundTasks, HTTPException
 from pydantic import BaseModel, Field
 from typing import Optional, Dict
+from datetime import datetime, timezone
 
 router = APIRouter(prefix="/api", tags=["analyze"])
 
@@ -19,13 +21,38 @@ class AnalyzeResponse(BaseModel):
 class ResultResponse(BaseModel):
     job_id: str
     status: str
+    step: Optional[str] = None
     result: Optional[dict] = None
     error: Optional[str] = None
 
+
+class AnalysisListItem(BaseModel):
+    job_id: str
+    status: str
+    step: Optional[str] = None
+    input_type: Optional[str] = None
+    raw_input: Optional[str] = None
+    created_at: Optional[str] = None
+    result: Optional[dict] = None
+
 async def _run_pipeline(job_id: str, raw_input: str, input_type: str):
-    from ..agent.pipeline import pipeline
-    
+    from agent.pipeline import pipeline
+
+    node_to_step = {
+        "cache_check": "Checking cache",
+        "input_parser": "Extracting content",
+        "essence_extractor": "Extracting essence",
+        "claim_splitter": "Identifying claims",
+        "query_builder": "Building search queries",
+        "adversarial_searcher": "Cross-referencing sources",
+        "llm_judge": "Evaluating evidence",
+        "score_aggregator": "Scoring credibility",
+        "explanation_generator": "Generating verdict",
+        "cache_writer": "Finalizing result",
+    }
+
     _job_store[job_id]["status"] = "processing"
+    _job_store[job_id]["step"] = "Initializing pipeline"
     try:
         initial_state = {
             "raw_input": raw_input,
@@ -33,10 +60,31 @@ async def _run_pipeline(job_id: str, raw_input: str, input_type: str):
             "cached": False,
             "claim_results": [],
         }
-        final_state = await pipeline.ainvoke(initial_state)
+        merged_state = dict(initial_state)
+        async for update in pipeline.astream(initial_state, stream_mode="updates"):
+            for node_name, payload in update.items():
+                step_label = node_to_step.get(node_name)
+                if step_label and job_id in _job_store:
+                    _job_store[job_id]["step"] = step_label
 
+                if not isinstance(payload, dict):
+                    continue
+                for key, value in payload.items():
+                    if key == "claim_results" and isinstance(value, list):
+                        merged_state.setdefault("claim_results", [])
+                        merged_state["claim_results"].extend(value)
+                    else:
+                        merged_state[key] = value
+
+        final_state = merged_state
+
+        current_job = _job_store.get(job_id, {})
         _job_store[job_id] = {
             "status": "done",
+            "step": "Completed",
+            "input_type": current_job.get("input_type", input_type),
+            "raw_input": current_job.get("raw_input", raw_input),
+            "created_at": current_job.get("created_at"),
             "result": {
                 "ai_score": final_state.get("ai_score"),
                 "essence": final_state.get("essence"),
@@ -45,7 +93,15 @@ async def _run_pipeline(job_id: str, raw_input: str, input_type: str):
             },
         }
     except Exception as exc:
-        _job_store[job_id] = {"status": "error", "error": str(exc)}
+        print(f"[analyze] pipeline failed for job {job_id}: {exc}")
+        traceback.print_exc()
+        current_job = _job_store.get(job_id, {})
+        _job_store[job_id] = {
+            **current_job,
+            "status": "error",
+            "step": "Failed",
+            "error": f"{type(exc).__name__}: {exc}",
+        }
 
 @router.post("/analyze", response_model=AnalyzeResponse, status_code=202)
 async def analyze(req: AnalyzeRequest, background_tasks: BackgroundTasks):
@@ -53,7 +109,13 @@ async def analyze(req: AnalyzeRequest, background_tasks: BackgroundTasks):
         raise HTTPException(400, "input_type must be 'url', 'text', or 'image'")
 
     job_id = str(uuid.uuid4())
-    _job_store[job_id] = {"status": "queued"}
+    _job_store[job_id] = {
+        "status": "queued",
+        "step": "Queued",
+        "input_type": req.input_type,
+        "raw_input": req.raw_input,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
 
     background_tasks.add_task(_run_pipeline, job_id, req.raw_input, req.input_type)
     return AnalyzeResponse(job_id=job_id)
@@ -64,3 +126,21 @@ async def get_results(job_id: str):
     if job is None:
         raise HTTPException(404, "Job not found")
     return ResultResponse(job_id=job_id, **job)
+
+
+@router.get("/results", response_model=list[AnalysisListItem])
+async def list_results():
+    items: list[AnalysisListItem] = []
+    for job_id, job in _job_store.items():
+        items.append(
+            AnalysisListItem(
+                job_id=job_id,
+                status=job.get("status", "queued"),
+                step=job.get("step"),
+                input_type=job.get("input_type"),
+                raw_input=job.get("raw_input"),
+                created_at=job.get("created_at"),
+                result=job.get("result"),
+            )
+        )
+    return items

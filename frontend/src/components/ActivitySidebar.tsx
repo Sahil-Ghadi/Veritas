@@ -1,6 +1,8 @@
 "use client";
 
-import { recentActivity } from "@/lib/mockData";
+import { useEffect, useState } from "react";
+import { buildRecentActivity, getAllAnalyses } from "@/lib/api";
+import { ActivityItem } from "@/lib/types";
 import { VerdictBadge } from "./VerdictBadge";
 import { Activity, MessageSquareWarning, FileSearch, ChevronRight, Search } from "lucide-react";
 import Link from "next/link";
@@ -8,6 +10,20 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 
 export const ActivitySidebar = () => {
+  const [recentActivity, setRecentActivity] = useState<ActivityItem[]>([]);
+
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const analyses = await getAllAnalyses();
+        setRecentActivity(buildRecentActivity(analyses));
+      } catch {
+        setRecentActivity([]);
+      }
+    };
+    void load();
+  }, []);
+
   return (
     <aside className="hidden lg:flex flex-col w-72 shrink-0 border-l border-border/40 bg-sidebar/40 h-screen sticky top-0">
       <div className="p-4 border-b border-border/40">
@@ -25,7 +41,7 @@ export const ActivitySidebar = () => {
         {recentActivity.map((item, idx) => (
           <Link
             key={item.id}
-            href="/analysis/a1"
+            href={`/analysis/${item.id}`}
             className="group block p-3 rounded-lg hover:bg-sidebar-accent transition-all duration-300 ease-smooth animate-fade-in border border-transparent hover:border-border/60"
             style={{ animationDelay: `${idx * 40}ms` }}
           >

@@ -8,10 +8,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { VerdictBadge } from "@/components/VerdictBadge";
 import { CredibilityMeter } from "@/components/CredibilityMeter";
-import { mockAnalyses } from "@/lib/mockData";
+import { getAllAnalyses } from "@/lib/api";
 import { ThumbsUp, ThumbsDown, MessageSquareWarning, TrendingUp, Clock, Flame, Search, Link2, FileText, Image as ImageIcon } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { cn } from "@/lib/utils";
+import { Analysis } from "@/lib/types";
 
 const filters = [
   { id: "trending", label: "Trending", icon: Flame },
@@ -22,6 +23,26 @@ const filters = [
 
 const Community = () => {
   const [active, setActive] = useState("trending");
+  const [analyses, setAnalyses] = useState<Analysis[]>([]);
+
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const data = await getAllAnalyses();
+        setAnalyses(data);
+      } catch {
+        setAnalyses([]);
+      }
+    };
+    void load();
+  }, []);
+
+  const visibleAnalyses = useMemo(() => {
+    if (active === "recent") return analyses;
+    if (active === "disputed") return analyses.filter((a) => a.disputes > 0);
+    if (active === "top") return [...analyses].sort((a, b) => (b.upvotes - b.downvotes) - (a.upvotes - a.downvotes));
+    return analyses;
+  }, [active, analyses]);
 
   return (
     <div className="min-h-screen flex flex-col md:flex-row bg-background">
@@ -63,7 +84,7 @@ const Community = () => {
             </div>
 
             <div className="space-y-4">
-              {mockAnalyses.map((a, i) => (
+              {visibleAnalyses.map((a, i) => (
                 <Link
                   key={a.id}
                   href={`/analysis/${a.id}`}
@@ -128,6 +149,11 @@ const Community = () => {
                   </Card>
                 </Link>
               ))}
+              {visibleAnalyses.length === 0 && (
+                <Card className="p-6 text-sm text-muted-foreground bg-gradient-card border-border/60">
+                  No analyses available yet. Run an analysis from the analyze page and it will appear here.
+                </Card>
+              )}
             </div>
 
             <div className="mt-8 text-center">

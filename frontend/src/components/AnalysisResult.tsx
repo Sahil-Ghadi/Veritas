@@ -1,6 +1,6 @@
 "use client";
 
-import { Analysis } from "@/lib/mockData";
+import { Analysis } from "@/lib/types";
 import { Card } from "@/components/ui/card";
 import { VerdictBadge } from "./VerdictBadge";
 import { CredibilityMeter } from "./CredibilityMeter";

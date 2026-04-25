@@ -1,4 +1,4 @@
-from typing import TypedDict, Annotated, Optional, Literal, List
+from typing import TypedDict, Annotated, Optional, Literal, List, Any
 import operator
 from pydantic import BaseModel, Field
 
@@ -58,6 +58,11 @@ class ClaimResult(BaseModel):
     diversity_score: float = 1.0
     echo_chamber_detected: bool = False
 
+
+def take_latest(left: Any, right: Any) -> Any:
+    """Reducer for branch-local keys written concurrently."""
+    return right if right is not None else left
+
 class GraphState(TypedDict):
     raw_input: str
     input_type: str
@@ -68,8 +73,8 @@ class GraphState(TypedDict):
     primary_actor: str
     implied_consequence: str
     claims: List[dict]
-    current_claim: Optional[dict]
-    current_search_results: List[dict]
+    current_claim: Annotated[Optional[dict], take_latest]
+    current_search_results: Annotated[List[dict], take_latest]
     claim_results: Annotated[List[dict], operator.add]
     ai_score: float
     score_breakdown: dict

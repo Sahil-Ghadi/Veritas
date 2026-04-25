@@ -1,5 +1,5 @@
 import { cn } from "@/lib/utils";
-import { Verdict, verdictMeta } from "@/lib/mockData";
+import { Verdict, verdictMeta } from "@/lib/types";
 import { CheckCircle2, XCircle, AlertTriangle, HelpCircle } from "lucide-react";
 
 const iconFor: Record<Verdict, typeof CheckCircle2> = {

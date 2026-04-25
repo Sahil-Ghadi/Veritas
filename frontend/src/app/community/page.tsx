@@ -45,9 +45,10 @@ const Community = () => {
     return analyses;
   }, [active, analyses]);
 
-  const handleVote = async (postId: string, vote: "up" | "down") => {
+  const handleVote = async (postId: string | undefined, vote: "up" | "down") => {
+    if (!postId) return;
     if (votingIds[postId]) return;
-    const target = analyses.find((a) => a.id === postId);
+    const target = analyses.find((a) => (a.postId || a.id) === postId);
     if (!target) return;
 
     const oldVote = target.myVote || "none";
@@ -56,7 +57,7 @@ const Community = () => {
     setVotingIds((prev) => ({ ...prev, [postId]: true }));
     setAnalyses((prev) =>
       prev.map((a) => {
-        if (a.id !== postId) return a;
+        if ((a.postId || a.id) !== postId) return a;
         let up = a.upvotes;
         let down = a.downvotes;
         if (oldVote === "up") up -= 1;
@@ -71,7 +72,7 @@ const Community = () => {
       const result = await castVote(postId, nextVote);
       setAnalyses((prev) =>
         prev.map((a) =>
-          a.id === postId
+          (a.postId || a.id) === postId
             ? {
                 ...a,
                 upvotes: result.upvotes,
@@ -87,7 +88,7 @@ const Community = () => {
         setAnalyses(refreshed);
       } catch {
         setAnalyses((prev) =>
-          prev.map((a) => (a.id === postId ? { ...a, myVote: oldVote } : a))
+          prev.map((a) => ((a.postId || a.id) === postId ? { ...a, myVote: oldVote } : a))
         );
       }
     } finally {
@@ -103,11 +104,11 @@ const Community = () => {
         <main className="flex-1 min-w-0">
           <div className="container max-w-5xl py-8 md:py-12">
             <div className="mb-8 animate-fade-in-up">
-              <p className="text-xs font-mono uppercase tracking-widest text-accent mb-2">— Community</p>
-              <h1 className="font-display text-4xl md:text-5xl font-medium tracking-tightest">
+              <p className="text-xs font-mono uppercase tracking-widest text-accent mb-2">Community</p>
+              <h1 className="font-display text-4xl md:text-5xl italic font-light tracking-tightest">
                 Verified <span className="italic font-light">by the crowd.</span>
               </h1>
-              <p className="text-muted-foreground mt-3 max-w-2xl text-lg">
+              <p className="text-muted-foreground mt-3 max-w-3xl text-lg">
                 Every analysis Veritas runs is shared here. Vote, dispute, or contribute counter-evidence.
               </p>
             </div>
@@ -153,9 +154,9 @@ const Community = () => {
                           )}
                           onClick={(e) => {
                             e.preventDefault();
-                            void handleVote(a.id, "up");
+                            void handleVote(a.postId, "up");
                           }}
-                          disabled={Boolean(votingIds[a.id])}
+                          disabled={Boolean(votingIds[a.postId || a.id])}
                         >
                           <ThumbsUp className="h-4 w-4" />
                         </button>
@@ -169,9 +170,9 @@ const Community = () => {
                           )}
                           onClick={(e) => {
                             e.preventDefault();
-                            void handleVote(a.id, "down");
+                            void handleVote(a.postId, "down");
                           }}
-                          disabled={Boolean(votingIds[a.id])}
+                          disabled={Boolean(votingIds[a.postId || a.id])}
                         >
                           <ThumbsDown className="h-4 w-4" />
                         </button>

@@ -1,10 +1,11 @@
 import uuid
 import traceback
-from fastapi import APIRouter, BackgroundTasks, HTTPException
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 from pydantic import BaseModel, Field
 from typing import Optional, Dict
 from datetime import datetime, timezone
 from core.firebase import db_async
+from firebase_admin import auth as firebase_auth
 
 router = APIRouter(prefix="/api", tags=["analyze"])
 
@@ -23,6 +24,11 @@ class ResultResponse(BaseModel):
     job_id: str
     status: str
     step: Optional[str] = None
+    post_id: Optional[str] = None
+    content_hash: Optional[str] = None
+    cached: bool = False
+    submitted_by: Optional[str] = None
+    my_vote: Optional[str] = None
     result: Optional[dict] = None
     error: Optional[str] = None
 
@@ -35,16 +41,39 @@ class AnalysisListItem(BaseModel):
     raw_input: Optional[str] = None
     created_at: Optional[str] = None
     result: Optional[dict] = None
+    content_hash: Optional[str] = None
+    cached: bool = False
+    post_id: Optional[str] = None
+    submitted_by: Optional[str] = None
+    my_vote: Optional[str] = None
     upvotes: int = 0
     downvotes: int = 0
     disputes: int = 0
+
+
+async def _get_uid_from_request(req: Request) -> Optional[str]:
+    """Best-effort auth parsing. Returns uid if bearer token is valid."""
+    auth_header = req.headers.get("Authorization", "")
+    if not auth_header.startswith("Bearer "):
+        return None
+    token = auth_header.replace("Bearer ", "").strip()
+    if not token:
+        return None
+    try:
+        decoded = firebase_auth.verify_id_token(token)
+        return decoded.get("uid")
+    except Exception:
+        return None
 
 
 async def _upsert_post_from_job(job_id: str, job: dict) -> None:
     """Ensure a Firestore post doc exists for dispute/vote features."""
     if job.get("status") != "done":
         return
+    if bool(job.get("cached", False)):
+        return
     result = job.get("result") or {}
+    post_id = job.get("post_id") or job_id
     claims = result.get("claims") or []
     post_claims = [
         {
@@ -55,11 +84,13 @@ async def _upsert_post_from_job(job_id: str, job: dict) -> None:
         for c in claims
     ]
     post_doc = {
-        "id": job_id,
-        "poster_id": "system",
+        "id": post_id,
+        "poster_id": job.get("submitted_by_uid", "system"),
+        "submitted_by": job.get("submitted_by", "community"),
         "source": "analysis_pipeline",
         "input_type": job.get("input_type", "text"),
         "raw_input": job.get("raw_input", ""),
+        "content_hash": job.get("content_hash"),
         "summary": result.get("explanation", ""),
         "essence": result.get("essence", ""),
         "ai_score": result.get("ai_score", 0.5),
@@ -70,7 +101,7 @@ async def _upsert_post_from_job(job_id: str, job: dict) -> None:
         "created_at": job.get("created_at"),
         "updated_at": datetime.now(timezone.utc),
     }
-    await db_async.collection("posts").document(job_id).set(post_doc, merge=True)
+    await db_async.collection("posts").document(post_id).set(post_doc, merge=True)
 
 
 async def _sync_job_counts_from_post(job_id: str) -> None:
@@ -78,13 +109,30 @@ async def _sync_job_counts_from_post(job_id: str) -> None:
     job = _job_store.get(job_id)
     if not job:
         return
-    post_snap = await db_async.collection("posts").document(job_id).get()
+    post_id = job.get("post_id") or job_id
+    post_snap = await db_async.collection("posts").document(post_id).get()
     if not post_snap.exists:
         return
     post = post_snap.to_dict() or {}
     job["upvotes"] = int(post.get("upvotes", 0) or 0)
     job["downvotes"] = int(post.get("downvotes", 0) or 0)
     job["disputes"] = int(post.get("disputes", 0) or 0)
+    job["submitted_by"] = post.get("submitted_by", job.get("submitted_by", "community"))
+
+
+async def _sync_user_vote(job_id: str, uid: Optional[str]) -> None:
+    if not uid:
+        return
+    job = _job_store.get(job_id)
+    if not job:
+        return
+    post_id = job.get("post_id") or job_id
+    vote_doc = await db_async.collection("post_votes").document(f"{post_id}:{uid}").get()
+    if vote_doc.exists:
+        vote_data = vote_doc.to_dict() or {}
+        job["my_vote"] = vote_data.get("vote", "none")
+    else:
+        job["my_vote"] = "none"
 
 async def _run_pipeline(job_id: str, raw_input: str, input_type: str):
     from agent.pipeline import pipeline
@@ -136,6 +184,9 @@ async def _run_pipeline(job_id: str, raw_input: str, input_type: str):
             "input_type": current_job.get("input_type", input_type),
             "raw_input": current_job.get("raw_input", raw_input),
             "created_at": current_job.get("created_at"),
+            "cached": bool(final_state.get("cached", False)),
+            "content_hash": final_state.get("content_hash"),
+            "post_id": current_job.get("post_id", current_job.get("content_hash") or final_state.get("content_hash") or job_id),
             "upvotes": current_job.get("upvotes", 0),
             "downvotes": current_job.get("downvotes", 0),
             "disputes": current_job.get("disputes", 0),
@@ -159,9 +210,22 @@ async def _run_pipeline(job_id: str, raw_input: str, input_type: str):
         }
 
 @router.post("/analyze", response_model=AnalyzeResponse, status_code=202)
-async def analyze(req: AnalyzeRequest, background_tasks: BackgroundTasks):
+async def analyze(req: AnalyzeRequest, background_tasks: BackgroundTasks, http_req: Request):
     if req.input_type not in ("url", "text", "image"):
         raise HTTPException(400, "input_type must be 'url', 'text', or 'image'")
+
+    uid = await _get_uid_from_request(http_req)
+    submitted_by = "community"
+    if uid:
+        try:
+            user_snap = await db_async.collection("users").document(uid).get()
+            if user_snap.exists:
+                user_data = user_snap.to_dict() or {}
+                submitted_by = user_data.get("name") or user_data.get("email") or uid
+            else:
+                submitted_by = uid
+        except Exception:
+            submitted_by = uid
 
     job_id = str(uuid.uuid4())
     _job_store[job_id] = {
@@ -170,26 +234,46 @@ async def analyze(req: AnalyzeRequest, background_tasks: BackgroundTasks):
         "input_type": req.input_type,
         "raw_input": req.raw_input,
         "created_at": datetime.now(timezone.utc).isoformat(),
+        "cached": False,
+        "content_hash": None,
+        "post_id": None,
+        "submitted_by_uid": uid,
+        "submitted_by": submitted_by,
+        "my_vote": "none",
     }
 
     background_tasks.add_task(_run_pipeline, job_id, req.raw_input, req.input_type)
     return AnalyzeResponse(job_id=job_id)
 
 @router.get("/results/{job_id}", response_model=ResultResponse)
-async def get_results(job_id: str):
+async def get_results(job_id: str, req: Request):
     job = _job_store.get(job_id)
     if job is None:
         raise HTTPException(404, "Job not found")
     await _upsert_post_from_job(job_id, job)
     await _sync_job_counts_from_post(job_id)
+    uid = await _get_uid_from_request(req)
+    await _sync_user_vote(job_id, uid)
     return ResultResponse(job_id=job_id, **job)
 
 
 @router.get("/results", response_model=list[AnalysisListItem])
-async def list_results():
+async def list_results(req: Request):
     items: list[AnalysisListItem] = []
+    uid = await _get_uid_from_request(req)
+    seen_hashes: set[str] = set()
     for job_id, job in _job_store.items():
+        if job.get("status") != "done":
+            continue
+        if bool(job.get("cached", False)):
+            continue
+        content_hash = job.get("content_hash")
+        if content_hash:
+            if content_hash in seen_hashes:
+                continue
+            seen_hashes.add(content_hash)
         await _sync_job_counts_from_post(job_id)
+        await _sync_user_vote(job_id, uid)
         items.append(
             AnalysisListItem(
                 job_id=job_id,
@@ -199,6 +283,11 @@ async def list_results():
                 raw_input=job.get("raw_input"),
                 created_at=job.get("created_at"),
                 result=job.get("result"),
+                content_hash=job.get("content_hash"),
+                cached=bool(job.get("cached", False)),
+                post_id=job.get("post_id"),
+                submitted_by=job.get("submitted_by"),
+                my_vote=job.get("my_vote"),
                 upvotes=job.get("upvotes", 0),
                 downvotes=job.get("downvotes", 0),
                 disputes=job.get("disputes", 0),

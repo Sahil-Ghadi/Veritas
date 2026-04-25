@@ -67,8 +67,8 @@ const Analyze = () => {
             {state.kind === "idle" && (
               <>
                 <div className="mb-8 animate-fade-in-up">
-                  <p className="text-xs font-mono uppercase tracking-widest text-accent mb-2">— New Analysis</p>
-                  <h1 className="font-display text-4xl md:text-5xl font-medium tracking-tightest text-balance">
+                  <p className="text-xs font-mono uppercase tracking-widest text-accent mb-2">New Analysis</p>
+                  <h1 className="font-display text-4xl md:text-5xl italic font-light tracking-tightest text-balance">
                     What do you want to <span className="italic font-light">verify?</span>
                   </h1>
                   <p className="text-muted-foreground mt-3 text-lg">
@@ -76,7 +76,7 @@ const Analyze = () => {
                   </p>
                 </div>
 
-                <AnalysisInput onAnalyze={handleAnalyze} loading={state.kind === "loading"} />
+                <AnalysisInput onAnalyze={handleAnalyze} loading={false} />
 
                 {/* Stats strip */}
                 <Card className="mt-10 p-5 bg-gradient-card border-border/60 grid grid-cols-3 gap-4">

@@ -92,12 +92,12 @@ const Landing = () => {
 
               <div className="mt-10 flex flex-col sm:flex-row items-center justify-center gap-3 animate-fade-in-up" style={{ animationDelay: "200ms" }}>
                 <Button size="lg" asChild className="bg-gradient-primary text-primary-foreground hover:opacity-90 shadow-glow font-semibold h-12 px-6">
-                  <Link href="/analyze">
+                  <Link href="/auth">
                     Analyze a story <ArrowRight className="h-4 w-4" />
                   </Link>
                 </Button>
                 <Button size="lg" variant="outline" asChild className="h-12 px-6">
-                  <Link href="/community">Browse community</Link>
+                  <Link href="/auth">Browse community</Link>
                 </Button>
               </div>
 

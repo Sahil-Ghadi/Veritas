@@ -9,8 +9,47 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ThumbsUp, ThumbsDown, MessageSquareWarning, Share2, Bookmark, ExternalLink, AlertTriangle, HelpCircle, Sparkles } from "lucide-react";
 import Link from "next/link";
+import { useState } from "react";
+import { castVote } from "@/lib/api";
+import { cn } from "@/lib/utils";
 
 export const AnalysisResult = ({ analysis, cached = false }: { analysis: Analysis; cached?: boolean }) => {
+  const [localVotes, setLocalVotes] = useState({
+    upvotes: analysis.upvotes,
+    downvotes: analysis.downvotes,
+    myVote: analysis.myVote || "none" as "up" | "down" | "none",
+  });
+  const [isVoting, setIsVoting] = useState(false);
+
+  const handleVote = async (vote: "up" | "down") => {
+    const postId = analysis.postId || analysis.id;
+    if (!postId || isVoting) return;
+    const oldVote = localVotes.myVote;
+    const nextVote = oldVote === vote ? "none" : vote;
+
+    let up = localVotes.upvotes;
+    let down = localVotes.downvotes;
+    if (oldVote === "up") up -= 1;
+    if (oldVote === "down") down -= 1;
+    if (nextVote === "up") up += 1;
+    if (nextVote === "down") down += 1;
+    setLocalVotes({ upvotes: Math.max(0, up), downvotes: Math.max(0, down), myVote: nextVote });
+
+    try {
+      setIsVoting(true);
+      const result = await castVote(postId, nextVote);
+      setLocalVotes({
+        upvotes: result.upvotes,
+        downvotes: result.downvotes,
+        myVote: result.my_vote,
+      });
+    } catch {
+      setLocalVotes({ upvotes: analysis.upvotes, downvotes: analysis.downvotes, myVote: oldVote });
+    } finally {
+      setIsVoting(false);
+    }
+  };
+
   return (
     <div className="space-y-6 animate-fade-in">
       {cached && (
@@ -48,11 +87,23 @@ export const AnalysisResult = ({ analysis, cached = false }: { analysis: Analysi
           </div>
 
           <div className="flex items-center gap-2 mt-6 pt-6 border-t border-border/40">
-            <Button variant="outline" size="sm" className="gap-1.5">
-              <ThumbsUp className="h-3.5 w-3.5" /> {analysis.upvotes}
+            <Button
+              variant="outline"
+              size="sm"
+              className={cn("gap-1.5", localVotes.myVote === "up" && "text-success border-success/40")}
+              onClick={() => void handleVote("up")}
+              disabled={isVoting}
+            >
+              <ThumbsUp className="h-3.5 w-3.5" /> {localVotes.upvotes}
             </Button>
-            <Button variant="outline" size="sm" className="gap-1.5">
-              <ThumbsDown className="h-3.5 w-3.5" /> {analysis.downvotes}
+            <Button
+              variant="outline"
+              size="sm"
+              className={cn("gap-1.5", localVotes.myVote === "down" && "text-destructive border-destructive/40")}
+              onClick={() => void handleVote("down")}
+              disabled={isVoting}
+            >
+              <ThumbsDown className="h-3.5 w-3.5" /> {localVotes.downvotes}
             </Button>
             <Button variant="outline" size="sm" className="gap-1.5 ml-auto" asChild>
               <Link href={`/analysis/${analysis.id}#dispute`}>

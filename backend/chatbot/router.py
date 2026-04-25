@@ -7,13 +7,14 @@ router = APIRouter(prefix="/chatbot", tags=["Chatbot"])
 
 class ChatRequest(BaseModel):
     message: str
+    article_context: str = ""
 
 @router.post("/chat")
 async def chat(request: ChatRequest):
     if not request.message.strip():
         raise HTTPException(status_code=400, detail="Message cannot be empty")
     
-    reply = await get_chatbot_response(request.message)
+    reply = await get_chatbot_response(request.message, request.article_context)
     return {"reply": reply}
 
 @router.get("/health")

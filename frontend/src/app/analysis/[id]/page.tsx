@@ -362,7 +362,7 @@ const AnalysisDetail = () => {
 
           </div>
         </main>
-        <ActivitySidebar />
+        <ActivitySidebar analysis={analysis ?? undefined} />
       </div>
     </div>
   );

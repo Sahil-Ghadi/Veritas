@@ -129,7 +129,7 @@ const Analyze = () => {
             )}
           </div>
         </main>
-        <ActivitySidebar />
+        <ActivitySidebar analysis={state.kind === "result" ? state.analysis : undefined} />
       </div>
     </div>
   );

@@ -1,9 +1,10 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Send, X, Bot, Sparkles } from "lucide-react";
+import { Send, Bot, Sparkles, X, ShieldCheck, Trash2 } from "lucide-react";
 import { ChatMessage } from "./ChatMessage";
+import { Analysis } from "@/lib/types";
 import "./chatbot.css";
 
 interface Message {
@@ -12,17 +13,57 @@ interface Message {
 }
 
 const SUGGESTED_CHIPS = [
-  "How does claim-level scoring work?",
-  "Explain Temporal Drift.",
-  "How to use the WhatsApp bot?",
-  "What is Credibility DNA?",
+  "Summarize the claims.",
+  "Any contradictions?",
+  "Explain the credibility score.",
+  "What's the overall verdict?",
 ];
 
-export const ChatbotCard: React.FC<{ onClose: () => void }> = ({ onClose }) => {
-  const [messages, setMessages] = useState<Message[]>([]);
+const buildContext = (analysis: Analysis) =>
+  `Title: ${analysis.title}
+Source: ${analysis.source}
+Verdict: ${analysis.verdict}
+Credibility Score: ${analysis.overallCredibility}/100
+AI Confidence: ${analysis.overallConfidence}%
+Summary: ${analysis.summary}
+Reasoning: ${analysis.reasoning}
+Claims:
+${analysis.claims.map((c, i) => `${i + 1}. ${c.text} → ${c.verdict} (confidence ${c.confidence}%)`).join("\n")}
+False details: ${analysis.falseDetails.join("; ") || "none"}
+Uncertain details: ${analysis.uncertainDetails.join("; ") || "none"}`;
+
+export const ChatbotCard: React.FC<{ onClose: () => void; analysis: Analysis }> = ({
+  onClose,
+  analysis,
+}) => {
+  const storageKey = `veritas-chat-${analysis.id}`;
+
+  const [messages, setMessages] = useState<Message[]>(() => {
+    if (typeof window === "undefined") return [];
+    try {
+      const saved = localStorage.getItem(storageKey);
+      return saved ? (JSON.parse(saved) as Message[]) : [];
+    } catch {
+      return [];
+    }
+  });
   const [input, setInput] = useState("");
   const [isTyping, setIsTyping] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  // Persist to localStorage whenever messages change
+  useEffect(() => {
+    try {
+      localStorage.setItem(storageKey, JSON.stringify(messages));
+    } catch {
+      // quota exceeded — silently fail
+    }
+  }, [messages, storageKey]);
+
+  const clearHistory = useCallback(() => {
+    setMessages([]);
+    localStorage.removeItem(storageKey);
+  }, [storageKey]);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -32,26 +73,27 @@ export const ChatbotCard: React.FC<{ onClose: () => void }> = ({ onClose }) => {
 
   const handleSend = async (text: string) => {
     if (!text.trim()) return;
-
-    const userMsg: Message = { role: "user", content: text };
-    setMessages((prev) => [...prev, userMsg]);
+    setMessages((p) => [...p, { role: "user", content: text }]);
     setInput("");
     setIsTyping(true);
-
     try {
-      const response = await fetch("http://127.0.0.1:8000/chatbot/chat", {
+      const res = await fetch("http://127.0.0.1:8000/chatbot/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: text }),
+        body: JSON.stringify({
+          message: text,
+          article_context: buildContext(analysis),
+        }),
       });
-      const data = await response.json();
-      
-      const botMsg: Message = { role: "bot", content: data.reply };
-      setMessages((prev) => [...prev, botMsg]);
-    } catch (error) {
-      setMessages((prev) => [
-        ...prev,
-        { role: "bot", content: "Sorry, I'm having trouble connecting to my brain. Is Ollama running?" },
+      const data = await res.json() as { reply: string };
+      setMessages((p) => [...p, { role: "bot", content: data.reply }]);
+    } catch {
+      setMessages((p) => [
+        ...p,
+        {
+          role: "bot",
+          content: "Couldn't reach the AI right now. Is Ollama running at localhost:11434?",
+        },
       ]);
     } finally {
       setIsTyping(false);
@@ -60,50 +102,83 @@ export const ChatbotCard: React.FC<{ onClose: () => void }> = ({ onClose }) => {
 
   return (
     <motion.div
-      initial={{ opacity: 0, scale: 0.8, y: 100, x: 100, originX: 1, originY: 1 }}
-      animate={{ opacity: 1, scale: 1, y: 0, x: 0 }}
-      exit={{ opacity: 0, scale: 0.8, y: 100, x: 100 }}
-      className="fixed bottom-24 right-6 w-[380px] h-[540px] bg-white border border-[#E2E8F0] rounded-[2rem] shadow-[0_20px_50px_rgba(0,0,0,0.1)] z-50 flex flex-col overflow-hidden"
+      initial={{ opacity: 0, scale: 0.92, y: 20, originX: 1, originY: 1 }}
+      animate={{ opacity: 1, scale: 1, y: 0 }}
+      exit={{   opacity: 0, scale: 0.92, y: 20 }}
+      transition={{ type: "spring", stiffness: 340, damping: 28 }}
+      className="
+        w-[480px] h-[620px]
+        flex flex-col rounded-2xl overflow-hidden
+        bg-[hsl(40_30%_98%)] border border-[hsl(36_18%_86%)]
+        shadow-[0_24px_64px_-12px_hsl(222_47%_14%/0.22),0_0_0_1px_hsl(36_18%_88%)]
+      "
     >
-      {/* Header */}
-      <div className="p-5 border-b border-[#F1F5F9] bg-white flex items-center justify-between">
-        <div className="flex items-center space-x-3">
-          <div className="w-11 h-11 rounded-2xl bg-[#EEF2FF] flex items-center justify-center border border-[#E0E7FF]">
-            <Sparkles className="w-6 h-6 text-[#4F8EF7] chatbot-glow" />
+      {/* ── Header ── */}
+      <div className="flex items-center justify-between px-5 py-4 border-b border-[hsl(36_18%_88%)] bg-[hsl(222_47%_14%)]">
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-xl bg-[hsl(14_78%_52%)] flex items-center justify-center shadow-sm">
+            <Sparkles className="w-5 h-5 text-white chatbot-glow" />
           </div>
           <div>
-            <h3 className="text-[15px] font-bold text-[#1E293B]">VeritAI Assistant</h3>
-            <div className="flex items-center space-x-1.5">
-              <div className="w-2 h-2 rounded-full bg-[#10B981] animate-pulse"></div>
-              <p className="text-[10px] text-[#64748B] font-bold tracking-wider uppercase">Local RAG Agent</p>
+            <h3 className="text-sm font-semibold text-[hsl(40_30%_96%)] font-sans tracking-tight">
+              Article AI
+            </h3>
+            <div className="flex items-center gap-1.5 mt-0.5">
+              <ShieldCheck className="w-3 h-3 text-[hsl(14_78%_62%)]" />
+              <p className="text-[10px] text-[hsl(40_20%_70%)] font-mono uppercase tracking-widest">
+                Bounded to this article
+              </p>
             </div>
           </div>
         </div>
         <button
           onClick={onClose}
-          className="p-2 rounded-xl hover:bg-[#F8FAFC] text-[#94A3B8] transition-colors"
+          className="p-1.5 rounded-lg hover:bg-white/10 text-[hsl(40_20%_70%)] hover:text-white transition-colors"
         >
-          <X className="w-5 h-5" />
+          <X className="w-4 h-4" />
         </button>
+        {messages.length > 0 && (
+          <button
+            onClick={clearHistory}
+            title="Clear conversation"
+            className="p-1.5 rounded-lg hover:bg-white/10 text-[hsl(40_20%_70%)] hover:text-white transition-colors"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+          </button>
+        )}
       </div>
 
-      {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-5 custom-scrollbar" ref={scrollRef}>
+
+      {/* ── Messages ── */}
+      <div
+        ref={scrollRef}
+        className="flex-1 overflow-y-auto px-4 py-4 space-y-1 custom-scrollbar bg-[hsl(40_30%_98%)]"
+      >
         {messages.length === 0 && (
-          <div className="h-full flex flex-col justify-center items-center text-center px-6">
-            <div className="w-20 h-20 rounded-[2rem] bg-[#F8FAFC] flex items-center justify-center mb-5 border border-[#F1F5F9]">
-              <Bot className="w-10 h-10 text-[#4F8EF7]" />
+          <div className="h-full flex flex-col justify-center items-center text-center px-6 gap-4">
+            <div className="w-16 h-16 rounded-2xl bg-[hsl(36_22%_93%)] border border-[hsl(36_18%_86%)] flex items-center justify-center">
+              <Bot className="w-8 h-8 text-[hsl(222_47%_30%)]" />
             </div>
-            <h4 className="text-[#1E293B] font-bold mb-2 text-xl">How can I help?</h4>
-            <p className="text-[#64748B] text-sm mb-8 leading-relaxed">
-              Ask me anything about how VeritAI fact-checks news and detects manipulation.
-            </p>
-            <div className="flex flex-wrap justify-center gap-2">
+            <div>
+              <h4 className="font-serif text-lg font-semibold text-[hsl(222_35%_11%)] mb-1">
+                Ask me anything
+              </h4>
+              <p className="text-sm text-[hsl(222_12%_42%)] leading-relaxed">
+                I have full context on this article's claims, verdict, and evidence.
+              </p>
+            </div>
+            <div className="flex flex-wrap justify-center gap-2 mt-1">
               {SUGGESTED_CHIPS.map((chip) => (
                 <button
                   key={chip}
-                  onClick={() => handleSend(chip)}
-                  className="px-4 py-2 bg-white hover:bg-[#F8FAFC] text-[#4F8EF7] text-xs font-semibold rounded-xl border border-[#E2E8F0] shadow-sm transition-all active:scale-95"
+                  onClick={() => void handleSend(chip)}
+                  className="
+                    px-3 py-1.5 text-xs font-medium rounded-full
+                    border border-[hsl(36_18%_82%)] bg-white
+                    text-[hsl(222_35%_22%)] hover:text-[hsl(14_78%_48%)]
+                    hover:border-[hsl(14_78%_52%/0.4)] hover:bg-[hsl(14_78%_52%/0.04)]
+                    transition-all active:scale-95
+                  "
                 >
                   {chip}
                 </button>
@@ -111,33 +186,44 @@ export const ChatbotCard: React.FC<{ onClose: () => void }> = ({ onClose }) => {
             </div>
           </div>
         )}
+
         {messages.map((msg, i) => (
           <ChatMessage key={i} role={msg.role} content={msg.content} />
         ))}
-        {isTyping && <ChatMessage role="bot" content="" isTyping={true} />}
+
+        {isTyping && <ChatMessage role="bot" content="" isTyping />}
       </div>
 
-      {/* Input */}
-      <div className="p-5 bg-white">
-        <div className="relative flex items-center">
+      {/* ── Input ── */}
+      <div className="px-4 py-3.5 border-t border-[hsl(36_18%_88%)] bg-[hsl(36_22%_97%)]">
+        <div className="flex items-center gap-2">
           <input
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && handleSend(input)}
-            placeholder="Type a message..."
-            className="w-full bg-[#F8FAFC] border border-[#E2E8F0] rounded-[1.25rem] py-4 pl-5 pr-14 text-sm text-[#334155] placeholder-[#94A3B8] focus:outline-none focus:border-[#4F8EF7] focus:ring-4 focus:ring-[#4F8EF7]/5 transition-all shadow-inner"
+            onKeyDown={(e) => e.key === "Enter" && void handleSend(input)}
+            placeholder="Ask about this article…"
+            className="
+              flex-1 min-w-0 bg-white border border-[hsl(36_18%_84%)]
+              rounded-xl py-3 px-4 text-sm text-[hsl(222_35%_11%)]
+              placeholder:text-[hsl(222_12%_58%)]
+              focus:outline-none focus:border-[hsl(222_47%_30%)]
+              focus:ring-3 focus:ring-[hsl(222_47%_14%/0.08)]
+              transition-all shadow-sm
+            "
           />
           <button
-            onClick={() => handleSend(input)}
-            disabled={!input.trim()}
-            className={`absolute right-2.5 p-2.5 rounded-xl transition-all ${
-              input.trim()
-                ? "bg-[#4F8EF7] text-white shadow-lg shadow-blue-500/20 active:scale-90"
-                : "text-[#CBD5E1] cursor-not-allowed"
-            }`}
+            onClick={() => void handleSend(input)}
+            disabled={!input.trim() || isTyping}
+            className={`
+              shrink-0 w-11 h-11 rounded-xl flex items-center justify-center transition-all
+              ${input.trim() && !isTyping
+                ? "bg-[hsl(14_78%_52%)] text-white shadow-[0_4px_12px_-4px_hsl(14_78%_52%/0.5)] hover:bg-[hsl(14_78%_48%)] active:scale-90"
+                : "bg-[hsl(36_22%_90%)] text-[hsl(222_12%_62%)] cursor-not-allowed"
+              }
+            `}
           >
-            <Send className="w-5 h-5" />
+            <Send className="w-4 h-4" />
           </button>
         </div>
       </div>

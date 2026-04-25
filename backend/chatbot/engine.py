@@ -19,6 +19,18 @@ Question: {question}
 
 Helpful Answer:"""
 
+ARTICLE_PROMPT_TEMPLATE = """You are the VeritAI Article Assistant. You are analyzing a specific article.
+Answer the user's question about the article using ONLY the provided article context and analysis details.
+If the answer is not in the article or analysis, say you don't know based on the provided information.
+Be concise and helpful.
+
+Article & Analysis Context:
+{context}
+
+Question: {question}
+
+Helpful Answer:"""
+
 # Globals to cache embeddings and vector store
 _embeddings = None
 _vector_store = None
@@ -38,7 +50,17 @@ def get_vector_store():
         _vector_store = FAISS.load_local(DB_FAISS_PATH, _embeddings, allow_dangerous_deserialization=True)
     return _vector_store
 
-async def get_chatbot_response(query: str):
+async def get_chatbot_response(query: str, article_context: str = ""):
+    if article_context:
+        try:
+            llm = load_llm()
+            prompt = ARTICLE_PROMPT_TEMPLATE.format(context=article_context, question=query)
+            response = await llm.ainvoke(prompt)
+            return response.content
+        except Exception as e:
+            print(f"[chatbot] Error in engine with article: {e}")
+            return "I'm having trouble analyzing this article right now. Please check if Ollama is running at http://127.0.0.1:11434."
+            
     db = get_vector_store()
     if db is None:
         return "System error: Vector database not initialized. Please run ingest.py first."

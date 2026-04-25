@@ -7,7 +7,7 @@ import { CredibilityMeter } from "./CredibilityMeter";
 import { ClaimCard } from "./ClaimCard";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ThumbsUp, ThumbsDown, MessageSquareWarning, Share2, Bookmark, ExternalLink, AlertTriangle, HelpCircle, Sparkles } from "lucide-react";
+import { ThumbsUp, ThumbsDown, MessageSquareWarning, AlertTriangle, HelpCircle, Sparkles } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 import { castVote } from "@/lib/api";
@@ -72,10 +72,6 @@ export const AnalysisResult = ({ analysis, cached = false }: { analysis: Analysi
               <h2 className="font-serif text-2xl md:text-3xl font-semibold leading-tight text-balance">
                 {analysis.title}
               </h2>
-            </div>
-            <div className="flex gap-1">
-              <Button variant="ghost" size="icon" aria-label="Share"><Share2 className="h-4 w-4" /></Button>
-              <Button variant="ghost" size="icon" aria-label="Save"><Bookmark className="h-4 w-4" /></Button>
             </div>
           </div>
 
@@ -174,16 +170,8 @@ export const AnalysisResult = ({ analysis, cached = false }: { analysis: Analysi
               <p className="text-sm text-muted-foreground">None.</p>
             )}
           </Card>
-        </TabsContent>
-      </Tabs>
-
-      <div className="flex justify-center pt-4">
-        <Button variant="ghost" size="sm" asChild>
-          <a href={analysis.inputPreview} target="_blank" rel="noopener noreferrer">
-            View original source <ExternalLink className="h-3 w-3 ml-1" />
-          </a>
-        </Button>
-      </div>
-    </div>
+      </TabsContent>
+    </Tabs>
+  </div>
   );
 };

@@ -135,7 +135,7 @@ const AnalysisDetail = () => {
             <AnalysisResult analysis={analysis} />
 
             {/* Dispute section */}
-            <section id="dispute" className="mt-12 pt-12 border-t border-border/40">
+            <section id="dispute" className="mt-6 pt-6 border-t border-border/40">
               <div className="flex items-center gap-2 mb-2">
                 <MessageSquareWarning className="h-5 w-5 text-warning" />
                 <h2 className="font-serif text-2xl md:text-3xl font-semibold">Dispute this analysis</h2>

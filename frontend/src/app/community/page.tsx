@@ -45,9 +45,15 @@ const Community = () => {
 
   const visibleAnalyses = useMemo(() => {
     if (active === "recent") return analyses;
-    if (active === "disputed") return analyses.filter((a) => a.disputes > 0);
+    if (active === "disputed") return analyses.filter((a) => (a.disputes || 0) > 0);
     if (active === "top") return [...analyses].sort((a, b) => (b.upvotes - b.downvotes) - (a.upvotes - a.downvotes));
-    return analyses;
+    
+    // For 'trending', sort by total engagement (votes + disputes)
+    return [...analyses].sort((a, b) => {
+      const engA = (a.upvotes || 0) + (a.downvotes || 0) + (a.disputes || 0) * 2;
+      const engB = (b.upvotes || 0) + (b.downvotes || 0) + (b.disputes || 0) * 2;
+      return engB - engA;
+    });
   }, [active, analyses]);
 
   const handleVote = async (postId: string | undefined, vote: "up" | "down") => {

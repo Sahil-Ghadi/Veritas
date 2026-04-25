@@ -1,15 +1,15 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { NavigationSidebar } from "@/components/NavigationSidebar";
 import { ActivitySidebar } from "@/components/ActivitySidebar";
 import { AnalysisInput } from "@/components/AnalysisInput";
 import { AnalysisProgress } from "@/components/AnalysisProgress";
 import { AnalysisResult } from "@/components/AnalysisResult";
-import { getAnalysisById, pollAnalysisUntilDone, startAnalysis } from "@/lib/api";
+import { getAnalysisById, pollAnalysisUntilDone, startAnalysis, getAllAnalyses } from "@/lib/api";
 import { Analysis } from "@/lib/types";
 import { Card } from "@/components/ui/card";
-import { AlertTriangle, Sparkles } from "lucide-react";
+import { AlertTriangle, Sparkles, Search, BrainCircuit, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 type State =
@@ -62,10 +62,10 @@ const Analyze = () => {
       <NavigationSidebar />
 
       <div className="flex flex-1 min-w-0">
-        <main className="flex-1 min-w-0">
-          <div className="container max-w-4xl py-8 md:py-12">
+        <main className="flex-1 min-w-0 flex flex-col">
+          <div className={`container max-w-4xl py-8 md:py-12 flex-1 flex flex-col ${state.kind === "idle" ? "justify-center min-h-[85vh]" : ""}`}>
             {state.kind === "idle" && (
-              <>
+              <div className="w-full xl:-mt-8">
                 <div className="mb-8 animate-fade-in-up">
                   <p className="text-xs font-mono uppercase tracking-widest text-accent mb-2">New Analysis</p>
                   <h1 className="font-display text-4xl md:text-5xl italic font-light tracking-tightest text-balance">
@@ -78,20 +78,31 @@ const Analyze = () => {
 
                 <AnalysisInput onAnalyze={handleAnalyze} loading={false} />
 
-                {/* Stats strip */}
-                <Card className="mt-10 p-5 bg-gradient-card border-border/60 grid grid-cols-3 gap-4">
-                  {[
-                    { v: "12,847", l: "stories analyzed" },
-                    { v: "2.4M", l: "claims checked" },
-                    { v: "98.2%", l: "transparency rate" },
-                  ].map((s, i) => (
-                    <div key={i} className="text-center">
-                      <p className="font-serif text-2xl font-semibold gradient-text">{s.v}</p>
-                      <p className="text-xs text-muted-foreground mt-1">{s.l}</p>
+                {/* Feature Highlights */}
+                <div className="mt-12 grid grid-cols-1 sm:grid-cols-3 gap-6">
+                  <Card className="p-6 bg-gradient-card border-border/40 hover:border-primary/30 transition-colors shadow-sm">
+                    <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center mb-4">
+                      <Search className="h-5 w-5 text-primary" />
                     </div>
-                  ))}
-                </Card>
-              </>
+                    <h3 className="font-semibold mb-2 text-foreground/90">Deep Web Search</h3>
+                    <p className="text-sm text-muted-foreground leading-relaxed">Scans thousands of reliable sources to find confirming or contradicting evidence in real-time.</p>
+                  </Card>
+                  <Card className="p-6 bg-gradient-card border-border/40 hover:border-primary/30 transition-colors shadow-sm">
+                    <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center mb-4">
+                      <BrainCircuit className="h-5 w-5 text-primary" />
+                    </div>
+                    <h3 className="font-semibold mb-2 text-foreground/90">AI Analysis</h3>
+                    <p className="text-sm text-muted-foreground leading-relaxed">Breaks down complex articles into atomic claims and evaluates their credibility instantly.</p>
+                  </Card>
+                  <Card className="p-6 bg-gradient-card border-border/40 hover:border-primary/30 transition-colors shadow-sm">
+                    <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center mb-4">
+                      <ShieldCheck className="h-5 w-5 text-primary" />
+                    </div>
+                    <h3 className="font-semibold mb-2 text-foreground/90">Community Driven</h3>
+                    <p className="text-sm text-muted-foreground leading-relaxed">Transparent results that can be audited, disputed, and refined by the community.</p>
+                  </Card>
+                </div>
+              </div>
             )}
 
             {state.kind === "loading" && (

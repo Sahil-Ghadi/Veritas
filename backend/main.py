@@ -4,6 +4,7 @@ import core.firebase  # noqa: F401 — triggers SDK init on import
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from routes import auth, analyze, dispute, vote, whatsapp
+from chatbot.router import router as chatbot_router
 
 settings = get_settings()
 
@@ -31,6 +32,7 @@ app.include_router(analyze.router)          # prefix already set in router (/api
 app.include_router(dispute.router, prefix="/api")
 app.include_router(vote.router, prefix="/api")
 app.include_router(whatsapp.router)   # POST /whatsapp/webhook
+app.include_router(chatbot_router)   # POST /chatbot/chat
 
 
 # ── Health check ──────────────────────────────────────────────────────────────

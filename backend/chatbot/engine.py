@@ -1,0 +1,60 @@
+import os
+from langchain_ollama import ChatOllama
+from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_community.vectorstores import FAISS
+from langchain_core.prompts import PromptTemplate
+
+# Config
+DB_FAISS_PATH = os.path.join(os.path.dirname(__file__), "local_db", "vectorstore")
+
+# System Prompt
+RAG_PROMPT_TEMPLATE = """You are the VeritAI Assistant. Answer the user's question using ONLY the provided context.
+If the answer is not in the context, say you only know about VeritAI's features and capabilities.
+Be concise (max 3 sentences).
+
+Context:
+{context}
+
+Question: {question}
+
+Helpful Answer:"""
+
+# Globals to cache embeddings and vector store
+_embeddings = None
+_vector_store = None
+
+def load_llm():
+    return ChatOllama(model="qwen2.5:3b", temperature=0.2, base_url="http://127.0.0.1:11434")
+
+def get_vector_store():
+    global _embeddings, _vector_store
+    if not os.path.exists(DB_FAISS_PATH):
+        return None
+    
+    if _vector_store is None:
+        print("[chatbot] Initializing vector store...")
+        if _embeddings is None:
+            _embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
+        _vector_store = FAISS.load_local(DB_FAISS_PATH, _embeddings, allow_dangerous_deserialization=True)
+    return _vector_store
+
+async def get_chatbot_response(query: str):
+    db = get_vector_store()
+    if db is None:
+        return "System error: Vector database not initialized. Please run ingest.py first."
+
+    try:
+        # 1. Search for relevant context (top 3)
+        docs = db.similarity_search(query, k=3)
+        context = "\n\n".join([doc.page_content for doc in docs])
+        
+        # 2. Prepare Prompt
+        llm = load_llm()
+        prompt = RAG_PROMPT_TEMPLATE.format(context=context, question=query)
+        
+        # 3. Get response from Ollama
+        response = await llm.ainvoke(prompt)
+        return response.content
+    except Exception as e:
+        print(f"[chatbot] Error in engine: {e}")
+        return "I'm having trouble accessing my knowledge base right now. Please check if Ollama is running at http://127.0.0.1:11434."

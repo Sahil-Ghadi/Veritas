@@ -27,7 +27,7 @@ const Analyze = () => {
       const queued = await startAnalysis({ input_type: mode, raw_input: value });
       setState({ kind: "loading" });
       setPipelineStep("Queued");
-      const done = await pollAnalysisUntilDone(queued.job_id, 90, (progress) => {
+      const done = await pollAnalysisUntilDone(queued.job_id, 400, (progress) => {
         if (progress.step) setPipelineStep(progress.step);
       });
       if (done.status === "error") {

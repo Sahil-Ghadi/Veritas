@@ -191,7 +191,7 @@ export async function getAnalysisResult(jobId: string): Promise<AnalyzeResultRes
 
 export async function pollAnalysisUntilDone(
   jobId: string,
-  maxAttempts = 240,
+  maxAttempts = 400,
   onProgress?: (status: AnalyzeResultResponse) => void
 ): Promise<AnalyzeResultResponse> {
   for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
@@ -200,7 +200,7 @@ export async function pollAnalysisUntilDone(
     if (result.status === "done" || result.status === "error") return result;
     await new Promise((resolve) => setTimeout(resolve, 1500));
   }
-  throw new Error("Analysis timed out after 6 minutes. Please try again.");
+  throw new Error("Analysis timed out after 10 minutes. Please try again.");
 }
 
 export async function getAllAnalyses(): Promise<Analysis[]> {

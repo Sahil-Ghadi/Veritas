@@ -1,9 +1,9 @@
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 from core.config import get_settings
 from core.firebase import init_firebase
-from routes import auth
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from routes import auth, dispute
 
 settings = get_settings()
 
@@ -18,6 +18,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
 # ── Startup ───────────────────────────────────────────────────────────────────
 @app.on_event("startup")
 async def startup():
@@ -25,7 +26,8 @@ async def startup():
 
 
 # ── Routes ────────────────────────────────────────────────────────────────────
-app.include_router(auth.router, prefix = "/auth")
+app.include_router(auth.router, prefix="/auth")
+app.include_router(dispute.router, prefix="/api")
 
 
 # ── Health check ──────────────────────────────────────────────────────────────
@@ -33,10 +35,6 @@ app.include_router(auth.router, prefix = "/auth")
 async def health():
     return {"status": "ok", "env": settings["app_env"]}
 
+
 if __name__ == "__main__":
-    uvicorn.run(
-        "main:app",
-        host="0.0.0.0",
-        port=8000,
-        reload=True
-    )
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)

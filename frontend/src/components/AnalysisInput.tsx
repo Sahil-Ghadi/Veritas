@@ -76,7 +76,7 @@ export const AnalysisInput = ({ onAnalyze, loading }: AnalysisInputProps) => {
                 onChange={(e) => setUrl(e.target.value)}
                 className="h-12 text-base bg-background/50 border-border/60"
               />
-              <p className="text-xs text-muted-foreground">Paste any news article URL — we'll extract and verify the claims.</p>
+              <p className="text-xs text-muted-foreground">Paste any news article URL and we'll extract and verify the claims.</p>
             </div>
           )}
 

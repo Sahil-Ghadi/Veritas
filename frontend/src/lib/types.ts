@@ -24,6 +24,7 @@ export interface Claim {
 
 export interface Analysis {
   id: string;
+  postId?: string;
   title: string;
   source: string;
   inputType: "url" | "text" | "image";

@@ -17,6 +17,11 @@ type AnalyzeResultResponse = {
   job_id: string;
   status: string;
   step?: string;
+  post_id?: string;
+  cached?: boolean;
+  content_hash?: string;
+  submitted_by?: string;
+  my_vote?: "up" | "down" | "none";
   result?: {
     ai_score?: number;
     essence?: string;
@@ -43,6 +48,11 @@ type AnalysisListItem = {
   raw_input?: string;
   created_at?: string;
   result?: AnalyzeResultResponse["result"];
+  content_hash?: string;
+  cached?: boolean;
+  post_id?: string;
+  submitted_by?: string;
+  my_vote?: "up" | "down" | "none";
   upvotes?: number;
   downvotes?: number;
   disputes?: number;
@@ -107,11 +117,12 @@ const toAnalysis = (item: AnalysisListItem): Analysis => {
 
   return {
     id: item.job_id,
+    postId: item.post_id || item.job_id,
     title: item.result?.essence || "Analysis result",
     source: extractSourceFromInput(inputType, rawInput),
     inputType,
     inputPreview: rawInput,
-    submittedBy: "community",
+    submittedBy: item.submitted_by || "community",
     submittedAt: item.created_at ? new Date(item.created_at).toLocaleString() : "just now",
     verdict: overallVerdict,
     overallCredibility: credibility,
@@ -125,7 +136,7 @@ const toAnalysis = (item: AnalysisListItem): Analysis => {
     downvotes: Number(item.downvotes || 0),
     disputes: Number(item.disputes || 0),
     tags: ["analysis"],
-    myVote: "none",
+    myVote: item.my_vote || "none",
   };
 };
 
@@ -156,16 +167,25 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return response.json();
 }
 
+async function getAuthHeader(): Promise<Record<string, string>> {
+  const token = await auth.currentUser?.getIdToken();
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
 export async function startAnalysis(payload: AnalyzeRequest): Promise<AnalyzeResponse> {
+  const authHeader = await getAuthHeader();
   return request<AnalyzeResponse>("/api/analyze", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...authHeader },
     body: JSON.stringify(payload),
   });
 }
 
 export async function getAnalysisResult(jobId: string): Promise<AnalyzeResultResponse> {
-  return request<AnalyzeResultResponse>(`/api/results/${jobId}`);
+  const authHeader = await getAuthHeader();
+  return request<AnalyzeResultResponse>(`/api/results/${jobId}`, {
+    headers: { ...authHeader },
+  });
 }
 
 export async function pollAnalysisUntilDone(
@@ -183,9 +203,25 @@ export async function pollAnalysisUntilDone(
 }
 
 export async function getAllAnalyses(): Promise<Analysis[]> {
-  const items = await request<AnalysisListItem[]>("/api/results");
-  return items
-    .filter((item) => item.status === "done" && item.result)
+  const authHeader = await getAuthHeader();
+  const items = await request<AnalysisListItem[]>("/api/results", {
+    headers: { ...authHeader },
+  });
+  const deduped = new Map<string, AnalysisListItem>();
+  for (const item of items) {
+    if (item.status !== "done" || !item.result) continue;
+    if (item.cached) continue;
+    const key = item.content_hash || item.post_id || item.job_id;
+    const existing = deduped.get(key);
+    if (!existing) {
+      deduped.set(key, item);
+      continue;
+    }
+    const existingTs = new Date(existing.created_at || 0).getTime();
+    const itemTs = new Date(item.created_at || 0).getTime();
+    if (itemTs > existingTs) deduped.set(key, item);
+  }
+  return Array.from(deduped.values())
     .sort((a, b) => (new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()))
     .map(toAnalysis);
 }
@@ -196,6 +232,11 @@ export async function getAnalysisById(id: string): Promise<Analysis | null> {
   return toAnalysis({
     job_id: result.job_id,
     status: result.status,
+    post_id: result.post_id || result.job_id,
+    cached: result.cached || false,
+    content_hash: result.content_hash,
+    submitted_by: result.submitted_by,
+    my_vote: result.my_vote,
     result: result.result,
   });
 }
@@ -219,6 +260,9 @@ export async function submitDispute(payload: {
 }
 
 export async function castVote(postId: string, vote: "up" | "down" | "none") {
+  if (!auth.currentUser) {
+    throw new Error("Please sign in to vote.");
+  }
   const token = await auth.currentUser?.getIdToken();
   return request<{ post_id: string; upvotes: number; downvotes: number; my_vote: "up" | "down" | "none" }>(
     `/api/posts/${postId}/vote`,

@@ -114,12 +114,19 @@ async def claim_splitter_node(state: GraphState) -> dict:
 # Node 5 — Claim Router
 from langgraph.types import Send
 def claim_router_node(state: GraphState) -> List[Send]:
+    """
+    Fan-out: Create a separate execution branch for each claim found.
+    We remove claim-specific state (like current_claim and results) from the base
+    state so each branch starts fresh, but inherits the context (essence, etc.).
+    """
     base_state = dict(state)
     for key in ("current_claim", "current_search_results", "claim_results"):
         base_state.pop(key, None)
+    
+    claims = state.get("claims") or []
     return [
         Send("query_builder", {**base_state, "current_claim": dict(claim)})
-        for claim in state["claims"]
+        for claim in claims
     ]
 
 # Node 6 — Query Builder
@@ -296,7 +303,9 @@ async def penalty_node(state: GraphState) -> dict:
 VERDICT_WEIGHT = {"supported": 1.0, "uncertain": 0.5, "unverifiable": 0.4, "contradicted": 0.0}
 
 async def score_aggregator_node(state: GraphState) -> dict:
-    results = state["claim_results"]
+    results = state.get("claim_results") or []
+    print(f"[aggregator] Received {len(results)} claim results for final scoring.")
+    
     if not results:
         return {"ai_score": 0.5, "score_breakdown": {}}
 

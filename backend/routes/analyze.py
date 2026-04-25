@@ -1,4 +1,5 @@
 import uuid
+import asyncio
 import traceback
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 from pydantic import BaseModel, Field
@@ -109,16 +110,8 @@ async def _sync_job_counts_from_post(job_id: str) -> None:
     job = _job_store.get(job_id)
     if not job:
         return
-<<<<<<< HEAD
-    # Avoid blocking result polling for queued/processing/error jobs.
-    # Counters are only persisted once a completed analysis is upserted as a post.
-    if job.get("status") != "done":
-        return
-    post_snap = await db_async.collection("posts").document(job_id).get()
-=======
     post_id = job.get("post_id") or job_id
     post_snap = await db_async.collection("posts").document(post_id).get()
->>>>>>> ed1931a7af844fe3dc4011d26a12230af5e052a0
     if not post_snap.exists:
         return
     post = post_snap.to_dict() or {}
@@ -152,7 +145,9 @@ async def _run_pipeline(job_id: str, raw_input: str, input_type: str):
         "claim_splitter": "Identifying claims",
         "query_builder": "Building search queries",
         "adversarial_searcher": "Cross-referencing sources",
-        "llm_judge": "Evaluating evidence",
+        "alignment": "Aligning evidence",
+        "judge": "Evaluating evidence",
+        "penalty": "Calculating confidence",
         "score_aggregator": "Scoring credibility",
         "explanation_generator": "Generating verdict",
         "cache_writer": "Finalizing result",
@@ -160,6 +155,8 @@ async def _run_pipeline(job_id: str, raw_input: str, input_type: str):
 
     _job_store[job_id]["status"] = "processing"
     _job_store[job_id]["step"] = "Initializing pipeline"
+    print(f"[analyze] Starting pipeline for job {job_id}...")
+    
     try:
         initial_state = {
             "raw_input": raw_input,
@@ -167,23 +164,26 @@ async def _run_pipeline(job_id: str, raw_input: str, input_type: str):
             "cached": False,
             "claim_results": [],
         }
+
         merged_state = dict(initial_state)
         async for update in pipeline.astream(initial_state, stream_mode="updates"):
             for node_name, payload in update.items():
+                print(f"[analyze] Node finished: {node_name}")
                 step_label = node_to_step.get(node_name)
-                if step_label and job_id in _job_store:
+                if step_label:
                     _job_store[job_id]["step"] = step_label
-
-                if not isinstance(payload, dict):
-                    continue
-                for key, value in payload.items():
-                    if key == "claim_results" and isinstance(value, list):
-                        merged_state.setdefault("claim_results", [])
-                        merged_state["claim_results"].extend(value)
-                    else:
-                        merged_state[key] = value
-
+                
+                # Merging logic
+                if isinstance(payload, dict):
+                    for key, value in payload.items():
+                        if key == "claim_results" and isinstance(value, list):
+                            merged_state.setdefault("claim_results", [])
+                            merged_state["claim_results"].extend(value)
+                        else:
+                            merged_state[key] = value
+        
         final_state = merged_state
+        print(f"[analyze] Pipeline finished. Results found: {len(final_state.get('claim_results', []))}")
 
         current_job = _job_store.get(job_id, {})
         _job_store[job_id] = {
@@ -268,9 +268,6 @@ async def get_results(job_id: str, req: Request):
 @router.get("/results", response_model=list[AnalysisListItem])
 async def list_results(req: Request):
     items: list[AnalysisListItem] = []
-<<<<<<< HEAD
-    for job_id, job in list(_job_store.items()):
-=======
     uid = await _get_uid_from_request(req)
     seen_hashes: set[str] = set()
     for job_id, job in _job_store.items():
@@ -283,7 +280,6 @@ async def list_results(req: Request):
             if content_hash in seen_hashes:
                 continue
             seen_hashes.add(content_hash)
->>>>>>> ed1931a7af844fe3dc4011d26a12230af5e052a0
         await _sync_job_counts_from_post(job_id)
         await _sync_user_vote(job_id, uid)
         items.append(

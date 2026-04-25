@@ -78,6 +78,10 @@ async def _sync_job_counts_from_post(job_id: str) -> None:
     job = _job_store.get(job_id)
     if not job:
         return
+    # Avoid blocking result polling for queued/processing/error jobs.
+    # Counters are only persisted once a completed analysis is upserted as a post.
+    if job.get("status") != "done":
+        return
     post_snap = await db_async.collection("posts").document(job_id).get()
     if not post_snap.exists:
         return
@@ -188,7 +192,7 @@ async def get_results(job_id: str):
 @router.get("/results", response_model=list[AnalysisListItem])
 async def list_results():
     items: list[AnalysisListItem] = []
-    for job_id, job in _job_store.items():
+    for job_id, job in list(_job_store.items()):
         await _sync_job_counts_from_post(job_id)
         items.append(
             AnalysisListItem(

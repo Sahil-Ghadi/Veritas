@@ -42,7 +42,6 @@ async def adversarial_search(
     Return:
         {
           "tagged_results": [...],
-          "diversity_score": float,
           "echo_chamber_detected": bool,
           "no_contradiction_found": bool,
         }
@@ -52,10 +51,18 @@ async def adversarial_search(
         _search(contradicting_query, max_results_each),
     )
 
-    tagged = (
-        [{"stance": "supports", **r} for r in confirming]
-        + [{"stance": "contradicts", **r} for r in contradicting]
-    )
+    def tag_and_dedupe(items: list[dict], stance: str) -> list[dict]:
+        seen_urls = set()
+        output = []
+        for r in items:
+            url = (r.get("url") or "").strip()
+            if not url or url in seen_urls:
+                continue
+            seen_urls.add(url)
+            output.append({"stance": stance, **r})
+        return output
+
+    tagged = tag_and_dedupe(confirming, "supports") + tag_and_dedupe(contradicting, "contradicts")
 
     # Source diversity analysis across all results
     domains = [
@@ -66,13 +73,11 @@ async def adversarial_search(
     domain_counts = Counter(domains)
     most_common_count = domain_counts.most_common(1)[0][1] if domain_counts else 0
 
-    diversity_score = len(unique_domains) / max(len(domains), 1)
     echo_chamber = most_common_count >= 3 or len(unique_domains) < 3
     no_contradiction_found = len(contradicting) == 0
 
     return {
         "tagged_results": tagged,
-        "diversity_score": round(diversity_score, 3),
         "echo_chamber_detected": echo_chamber,
         "no_contradiction_found": no_contradiction_found,
     }

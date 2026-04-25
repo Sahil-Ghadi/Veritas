@@ -109,8 +109,16 @@ async def _sync_job_counts_from_post(job_id: str) -> None:
     job = _job_store.get(job_id)
     if not job:
         return
+<<<<<<< HEAD
+    # Avoid blocking result polling for queued/processing/error jobs.
+    # Counters are only persisted once a completed analysis is upserted as a post.
+    if job.get("status") != "done":
+        return
+    post_snap = await db_async.collection("posts").document(job_id).get()
+=======
     post_id = job.get("post_id") or job_id
     post_snap = await db_async.collection("posts").document(post_id).get()
+>>>>>>> ed1931a7af844fe3dc4011d26a12230af5e052a0
     if not post_snap.exists:
         return
     post = post_snap.to_dict() or {}
@@ -260,6 +268,9 @@ async def get_results(job_id: str, req: Request):
 @router.get("/results", response_model=list[AnalysisListItem])
 async def list_results(req: Request):
     items: list[AnalysisListItem] = []
+<<<<<<< HEAD
+    for job_id, job in list(_job_store.items()):
+=======
     uid = await _get_uid_from_request(req)
     seen_hashes: set[str] = set()
     for job_id, job in _job_store.items():
@@ -272,6 +283,7 @@ async def list_results(req: Request):
             if content_hash in seen_hashes:
                 continue
             seen_hashes.add(content_hash)
+>>>>>>> ed1931a7af844fe3dc4011d26a12230af5e052a0
         await _sync_job_counts_from_post(job_id)
         await _sync_user_vote(job_id, uid)
         items.append(

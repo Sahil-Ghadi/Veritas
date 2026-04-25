@@ -1,5 +1,6 @@
 import httpx
 import hashlib
+import asyncio
 from bs4 import BeautifulSoup
 from langchain_core.messages import HumanMessage
 from core.llm_client import model
@@ -13,9 +14,42 @@ async def fetch_url_text(url: str) -> str:
             "Chrome/120.0.0.0 Safari/537.36"
         )
     }
-    async with httpx.AsyncClient(follow_redirects=True, timeout=15) as client:
-        resp = await client.get(url, headers=headers)
-        resp.raise_for_status()
+    timeout = httpx.Timeout(connect=10.0, read=20.0, write=10.0, pool=10.0)
+    last_error: Exception | None = None
+    async with httpx.AsyncClient(follow_redirects=True, timeout=timeout) as client:
+        for attempt in range(3):
+            try:
+                resp = await client.get(url, headers=headers)
+                resp.raise_for_status()
+                break
+            except (httpx.ConnectTimeout, httpx.ReadTimeout, httpx.NetworkError) as exc:
+                last_error = exc
+                if attempt == 2:
+                    raise ValueError(
+                        f"Could not fetch URL after retries ({type(exc).__name__}). "
+                        "Please retry or use input_type='text'."
+                    ) from exc
+                await asyncio.sleep(0.6 * (attempt + 1))
+            except httpx.HTTPStatusError as exc:
+                raise ValueError(
+                    f"URL returned HTTP {exc.response.status_code}. "
+                    "Please verify the URL or use input_type='text'."
+                ) from exc
+            except httpx.HTTPError as exc:
+                last_error = exc
+                if attempt == 2:
+                    raise ValueError(
+                        f"Could not fetch URL ({type(exc).__name__}). "
+                        "Please retry or use input_type='text'."
+                    ) from exc
+                await asyncio.sleep(0.6 * (attempt + 1))
+        else:
+            # Safety fallback; should be unreachable due to raise/break above.
+            if last_error is not None:
+                raise ValueError(
+                    f"Could not fetch URL ({type(last_error).__name__}). "
+                    "Please retry or use input_type='text'."
+                ) from last_error
 
     soup = BeautifulSoup(resp.text, "html.parser")
     for tag in soup(["script", "style", "nav", "footer", "header", "aside", "form"]):

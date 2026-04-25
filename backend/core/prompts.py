@@ -59,78 +59,65 @@ Rules:
 - Queries must be different vocabulary, different angle
 """
 
-ALIGNMENT_PROMPT = """
-You are checking whether search results are actually relevant to a specific claim.
+# ── Combined evidence classification + verdict (single LLM call per claim) ──────
+# Replaces the old two-step ALIGNMENT_PROMPT → JUDGE_PROMPT flow.
+# The LLM classifies each piece of evidence AND produces a final verdict
+# in one structured output call, cutting per-claim LLM round-trips from 2 → 1.
+EVIDENCE_JUDGE_PROMPT = """
+You are a rigorous fact-checker. Work in two steps, then return a single JSON.
 
 Claim: {claim}
 Claim type: {claim_type}
+Article context (essence): {essence}
 
-Evidence:
+Search results (pre-tagged with their search stance):
 {evidence}
 
-For each piece of evidence, assess:
+Source diversity: {diversity_note}
+Contradiction coverage: {contradiction_note}
+
+── STEP 1: Classify each piece of evidence ────────────────────────────────
+For every URL in the search results, assess:
 
 relevance:
-- "direct": the source explicitly addresses this exact claim
-- "partial": the source addresses the same topic but not the specific assertion
-- "none": the source is not about this claim at all
+  "direct"   – source explicitly addresses THIS exact claim
+  "partial"  – same topic, not the specific assertion
+  "none"     – unrelated to this claim
 
 stance:
-- "supports": the source confirms the claim is accurate
-- "contradicts": the source says a specific detail in the claim is WRONG
-- "neutral": the source reports on the same topic without confirming or denying
+  "supports"    – source confirms the claim is accurate
+  "contradicts" – source says a SPECIFIC DETAIL in the claim is factually wrong
+  "neutral"     – reports same topic without confirming or denying
 
 source_type:
-- "primary": official statement, government source, direct quote
-- "secondary": news reporting on primary sources  
-- "aggregator": roundup, live blog, news aggregator
+  "primary"    – official statement, government source, direct quote
+  "secondary"  – news reporting on primary sources
+  "aggregator" – roundup / live blog / news aggregator
 
-CRITICAL RULES:
-- A source that reports the SAME EVENT as the claim is "supports" or "neutral", 
-  never "contradicts" — even if its headline sounds like a denial
-- A source only "contradicts" if it explicitly states a specific detail in the 
-  claim is factually incorrect
-- Empty or stub sources (no article body) must be marked relevance: "none"
-- For attributed claims ("X said Y"): a source contradicts only if it shows 
-  X never made that statement — not if it shows Y is debatable
+CRITICAL CLASSIFICATION RULES:
+- A source reporting the SAME EVENT as the claim is "supports" or "neutral", NEVER "contradicts"
+- A source only "contradicts" if it explicitly states a specific detail is factually incorrect
+- Empty or title-only sources → relevance: "none"
+- For attributed claims ("X said Y"): contradicts only if it shows X never made that statement
+
+── STEP 2: Render a verdict ───────────────────────────────────────────────
+Using ONLY the evidence above (never your training knowledge), decide:
+
+  "supported"    – direct evidence confirms the claim; neutral sources on same facts = implicit support
+  "contradicted" – evidence explicitly refutes a SPECIFIC DETAIL (not just different framing)
+  "uncertain"    – genuine conflict between sources, or evidence too thin
+  "unverifiable" – no evidence addresses this claim at all
+
+CRITICAL VERDICT RULES:
+- Ignore contradicting sources that have no real content (stubs)
+- An attributed claim is supported if any credible source reports the statement was made
+- Lean toward "supported" when neutral sources confirm the same underlying event
+- Identify the specific false detail if contradicted (false_detail field)
 """
 
-JUDGE_PROMPT = """
-You are a rigorous fact-checker. You ONLY use the evidence provided — 
-never your own training knowledge.
-
-Claim: {claim}
-Claim type: {claim_type}
-Article context: {essence}
-
-Supporting evidence:
-{supporting_evidence}
-
-Neutral/contextual evidence (read carefully — may contain implicit confirmation):
-{neutral_context}
-
-Contradicting evidence:
-{contradicting_evidence}
-
-Source diversity note: {diversity_note}
-Contradiction search note: {contradiction_note}
-
-Verdict rules:
-- "supported": direct evidence confirms the claim. Neutral sources reporting 
-  the same underlying facts count as implicit support.
-- "contradicted": evidence explicitly refutes a SPECIFIC DETAIL. A source 
-  reporting the same event with different framing is NOT contradiction.
-- "uncertain": genuine conflict between sources, or evidence too thin to decide
-- "unverifiable": no evidence addresses this claim at all
-
-CRITICAL: 
-- Check if contradicting sources actually have content — empty stubs must be ignored
-- A claim attributed to a speaker (e.g. "Iran said...") is supported if any 
-  credible source reports that statement was made
-- Identify the specific false detail if contradicted, not just the whole claim
-- If neutral sources confirm the same underlying event, lean toward "supported" 
-  not "uncertain"
-"""
+# Kept as aliases so any code still referencing the old names doesn't break
+ALIGNMENT_PROMPT = EVIDENCE_JUDGE_PROMPT  # no longer used directly
+JUDGE_PROMPT = EVIDENCE_JUDGE_PROMPT       # no longer used directly
 
 AGGREGATOR_PROMPT = """
 You are writing a plain-English summary of a fact-check result for a news article.

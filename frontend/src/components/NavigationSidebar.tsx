@@ -19,27 +19,23 @@ export const NavigationSidebar = () => {
 
   const SidebarContent = () => (
     <>
-      <div className="h-16 flex items-center justify-between px-4 border-b border-border/40 shrink-0">
-        <Link href="/" className={cn("flex items-center gap-2 group", collapsed && "justify-center w-full")}>
-          <div className="relative shrink-0">
-            <Shield className="h-6 w-6 text-primary transition-transform duration-500 group-hover:scale-110" />
-            <div className="absolute inset-0 blur-md bg-primary/40 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
-          </div>
-          {!collapsed && <span className="font-serif text-xl font-semibold tracking-tight truncate">Veritas</span>}
-        </Link>
+      <div className={cn("h-16 flex items-center px-4 border-b border-border/40 shrink-0", collapsed ? "justify-center" : "justify-between")}>
         {!collapsed && (
-          <Button variant="ghost" size="icon" className="h-8 w-8 hidden md:flex" onClick={() => setCollapsed(true)}>
-            <ChevronLeft className="h-4 w-4" />
-          </Button>
+          <Link href="/" className="flex items-center gap-2 group min-w-0">
+            <span className="font-serif text-xl font-semibold tracking-tight truncate">Veritas</span>
+          </Link>
         )}
+        <Button 
+          variant="ghost" 
+          size="icon" 
+          className="h-8 w-8 hidden md:flex shrink-0" 
+          onClick={() => setCollapsed(!collapsed)}
+        >
+          {collapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
+        </Button>
       </div>
 
       <div className="flex-1 py-6 px-3 flex flex-col gap-2 overflow-y-auto">
-        {collapsed && (
-          <Button variant="ghost" size="icon" className="h-8 w-8 mx-auto mb-4 hidden md:flex" onClick={() => setCollapsed(false)}>
-            <ChevronRight className="h-4 w-4" />
-          </Button>
-        )}
         <nav className="flex flex-col gap-1">
           {links.map((l) => {
             const isActive = pathname === l.href;

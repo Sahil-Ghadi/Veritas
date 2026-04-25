@@ -111,7 +111,7 @@ const Community = () => {
             <div className="mb-8 animate-fade-in-up">
               <p className="text-xs font-mono uppercase tracking-widest text-accent mb-2">Community</p>
               <h1 className="font-display text-4xl md:text-5xl italic font-light tracking-tightest">
-                Verified <span className="italic font-light">by the crowd.</span>
+                Let the crowd verify claim. <span className="italic font-light"></span>
               </h1>
               <p className="text-muted-foreground mt-3 max-w-3xl text-lg">
                 Every analysis Veritas runs is shared here. Vote, dispute, or contribute counter-evidence.

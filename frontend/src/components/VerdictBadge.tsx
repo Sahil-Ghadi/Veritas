@@ -21,7 +21,7 @@ export const VerdictBadge = ({ verdict, size = "sm" }: { verdict: Verdict; size?
   };
   const iconSizes = { sm: "h-3 w-3", md: "h-4 w-4", lg: "h-5 w-5" };
   return (
-    <span className={cn("inline-flex items-center font-medium rounded-full ring-1", meta.color, meta.bg, meta.ring, sizes[size])}>
+    <span className={cn("inline-flex items-center whitespace-nowrap font-medium rounded-full ring-1", meta.color, meta.bg, meta.ring, sizes[size])}>
       <Icon className={iconSizes[size]} />
       {meta.label}
     </span>

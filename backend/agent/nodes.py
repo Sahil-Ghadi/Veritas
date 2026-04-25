@@ -118,7 +118,7 @@ def claim_router_node(state: GraphState) -> List[Send]:
     for key in ("current_claim", "current_search_results", "claim_results"):
         base_state.pop(key, None)
     return [
-        Send("query_builder", {**base_state, "current_claim": dict(claim)})
+        Send("claim_processing", {**base_state, "current_claim": dict(claim)})
         for claim in state["claims"]
     ]
 

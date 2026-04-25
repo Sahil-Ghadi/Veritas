@@ -97,7 +97,7 @@ const toClaim = (
   id: `c-${index + 1}`,
   text: claim.claim || `Claim ${index + 1}`,
   verdict: mapVerdict(claim.verdict),
-  confidence: Math.round((claim.confidence || 0.5) * 100),
+  confidence: Math.round((claim.confidence ?? 0.5) > 1 ? (claim.confidence ?? 0.5) : (claim.confidence ?? 0.5) * 100),
   credibilityScore: claim.verdict === "supported" ? 80 : claim.verdict === "contradicted" ? 20 : 50,
   reasoning: claim.reasoning || "No reasoning provided by the backend.",
   supporting: (claim.supporting_sources || []).map((url, i) => toEvidence(url, i, "supports")),
@@ -113,7 +113,8 @@ const toAnalysis = (item: AnalysisListItem): Analysis => {
   const hasFalse = claimVerdicts.includes("false") || claimVerdicts.includes("mostly-false");
   const hasTrue = claimVerdicts.includes("true") || claimVerdicts.includes("mostly-true");
   const overallVerdict: Verdict = hasFalse && hasTrue ? "mixed" : hasFalse ? "false" : hasTrue ? "mostly-true" : "unverified";
-  const credibility = Math.round((item.result?.ai_score || 0.5) * 100);
+  const aiScore = item.result?.ai_score ?? 0.5;
+  const credibility = Math.round(aiScore > 1 ? aiScore : aiScore * 100);
 
   return {
     id: item.job_id,
@@ -190,7 +191,7 @@ export async function getAnalysisResult(jobId: string): Promise<AnalyzeResultRes
 
 export async function pollAnalysisUntilDone(
   jobId: string,
-  maxAttempts = 90,
+  maxAttempts = 200,
   onProgress?: (status: AnalyzeResultResponse) => void
 ): Promise<AnalyzeResultResponse> {
   for (let attempt = 0; attempt < maxAttempts; attempt += 1) {

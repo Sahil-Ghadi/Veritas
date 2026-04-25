@@ -70,27 +70,27 @@ class GraphState(TypedDict, total=False):
     # Fields that MUST be present at pipeline start are validated in _run_pipeline.
 
     # ── Input ──────────────────────────────────────────────
-    raw_input: str
-    input_type: str
+    raw_input: Annotated[str, take_latest]
+    input_type: Annotated[str, take_latest]
 
     # ── Cache ──────────────────────────────────────────────
-    cached: bool
-    cached_result: Optional[dict]
-    content_hash: str
-    content_hash_written: bool
+    cached: Annotated[bool, take_latest]
+    cached_result: Annotated[Optional[dict], take_latest]
+    content_hash: Annotated[str, take_latest]
+    content_hash_written: Annotated[bool, take_latest]
 
     # ── Parsed ─────────────────────────────────────────────
-    parsed_text: str
+    parsed_text: Annotated[str, take_latest]
 
     # ── Essence ────────────────────────────────────────────
-    essence: str
-    framing_tone: str
-    primary_actor: str
-    implied_consequence: str
-    drift_score: float
+    essence: Annotated[str, take_latest]
+    framing_tone: Annotated[str, take_latest]
+    primary_actor: Annotated[str, take_latest]
+    implied_consequence: Annotated[str, take_latest]
+    drift_score: Annotated[float, take_latest]
 
     # ── Claims ─────────────────────────────────────────────
-    claims: List[dict]
+    claims: Annotated[List[dict], take_latest]
     # Parallel branches can emit these in the same step; allow safe merge.
     current_claim: Annotated[Optional[dict], take_latest]
     current_search_results: Annotated[List[dict], take_latest]
@@ -98,6 +98,6 @@ class GraphState(TypedDict, total=False):
     claim_results: Annotated[List[dict], operator.add]
 
     # ── Output ─────────────────────────────────────────────
-    ai_score: float
-    score_breakdown: dict
-    article_level_explanation: str
+    ai_score: Annotated[float, take_latest]
+    score_breakdown: Annotated[dict, take_latest]
+    article_level_explanation: Annotated[str, take_latest]

@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { buildRecentActivity, getAllAnalyses } from "@/lib/api";
-import { ActivityItem } from "@/lib/types";
-import { VerdictBadge } from "./VerdictBadge";
+import { ActivityItem, verdictMeta } from "@/lib/types";
+import { cn } from "@/lib/utils";
 import { Activity, MessageSquareWarning, FileSearch, ChevronRight, Search } from "lucide-react";
 import Link from "next/link";
 import { Input } from "@/components/ui/input";
@@ -42,7 +42,10 @@ export const ActivitySidebar = () => {
           <Link
             key={item.id}
             href={`/analysis/${item.id}`}
-            className="group block p-3 rounded-lg hover:bg-sidebar-accent transition-all duration-300 ease-smooth animate-fade-in border border-transparent hover:border-border/60"
+            className={cn(
+              "group block p-3 rounded-lg transition-all duration-300 ease-smooth animate-fade-in border border-transparent hover:border-border/60 hover:shadow-sm",
+              verdictMeta[item.verdict]?.bg || "bg-transparent hover:bg-sidebar-accent"
+            )}
             style={{ animationDelay: `${idx * 40}ms` }}
           >
             <div className="flex items-start gap-2.5">
@@ -56,7 +59,9 @@ export const ActivitySidebar = () => {
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium leading-snug truncate">{item.title}</p>
                 <div className="flex items-center justify-between mt-1.5">
-                  <VerdictBadge verdict={item.verdict} size="sm" />
+                  <span className={cn("text-xs font-semibold", verdictMeta[item.verdict]?.color)}>
+                    {verdictMeta[item.verdict]?.label}
+                  </span>
                   <span className="text-[10px] font-mono text-muted-foreground">{item.time}</span>
                 </div>
               </div>

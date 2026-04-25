@@ -85,6 +85,7 @@ async def _upsert_post_from_job(job_id: str, job: dict) -> None:
     ]
     post_doc = {
         "id": post_id,
+        "job_id": job_id,            # stored so we can query by job_id later
         "poster_id": job.get("submitted_by_uid", "system"),
         "submitted_by": job.get("submitted_by", "community"),
         "source": "analysis_pipeline",
@@ -94,7 +95,7 @@ async def _upsert_post_from_job(job_id: str, job: dict) -> None:
         "summary": result.get("explanation", ""),
         "essence": result.get("essence", ""),
         "ai_score": result.get("ai_score", 0.5),
-        "claims": post_claims,
+        "claims": claims,            # store full claim objects (with sources, reasoning)
         "upvotes": int(job.get("upvotes", 0) or 0),
         "downvotes": int(job.get("downvotes", 0) or 0),
         "disputes": int(job.get("disputes", 0) or 0),
@@ -109,16 +110,11 @@ async def _sync_job_counts_from_post(job_id: str) -> None:
     job = _job_store.get(job_id)
     if not job:
         return
-<<<<<<< HEAD
     # Avoid blocking result polling for queued/processing/error jobs.
     # Counters are only persisted once a completed analysis is upserted as a post.
     if job.get("status") != "done":
         return
     post_snap = await db_async.collection("posts").document(job_id).get()
-=======
-    post_id = job.get("post_id") or job_id
-    post_snap = await db_async.collection("posts").document(post_id).get()
->>>>>>> ed1931a7af844fe3dc4011d26a12230af5e052a0
     if not post_snap.exists:
         return
     post = post_snap.to_dict() or {}
@@ -146,16 +142,14 @@ async def _run_pipeline(job_id: str, raw_input: str, input_type: str):
     from agent.pipeline import pipeline
 
     node_to_step = {
-        "cache_check": "Checking cache",
-        "input_parser": "Extracting content",
-        "essence_extractor": "Extracting essence",
-        "claim_splitter": "Identifying claims",
-        "query_builder": "Building search queries",
-        "adversarial_searcher": "Cross-referencing sources",
-        "llm_judge": "Evaluating evidence",
-        "score_aggregator": "Scoring credibility",
-        "explanation_generator": "Generating verdict",
-        "cache_writer": "Finalizing result",
+        "cache_check": "Extracting content",
+        "input_parser": "Extracting essence",
+        "essence_extractor": "Identifying claims",
+        "claim_splitter": "Evaluating claims",
+        "claim_processing": "Scoring credibility",
+        "score_aggregator": "Generating verdict",
+        "explanation_generator": "Finalizing result",
+        "cache_writer": "Completed",
     }
 
     _job_store[job_id]["status"] = "processing"
@@ -255,54 +249,207 @@ async def analyze(req: AnalyzeRequest, background_tasks: BackgroundTasks, http_r
 
 @router.get("/results/{job_id}", response_model=ResultResponse)
 async def get_results(job_id: str, req: Request):
-    job = _job_store.get(job_id)
-    if job is None:
-        raise HTTPException(404, "Job not found")
-    await _upsert_post_from_job(job_id, job)
-    await _sync_job_counts_from_post(job_id)
+    """Fetch a single analysis result.
+
+    Checks the in-memory job store first (live jobs).
+    Falls back to Firestore `posts` collection for completed analyses
+    that survived a server restart.
+    """
     uid = await _get_uid_from_request(req)
-    await _sync_user_vote(job_id, uid)
-    return ResultResponse(job_id=job_id, **job)
+    job = _job_store.get(job_id)
+
+    if job is not None:
+        # Live in-memory job — sync counters and return as usual
+        await _upsert_post_from_job(job_id, job)
+        await _sync_job_counts_from_post(job_id)
+        await _sync_user_vote(job_id, uid)
+        return ResultResponse(job_id=job_id, **job)
+
+    # ── Firestore fallback ──────────────────────────────────────────────────
+    # The ID passed may be either the post_id (Firestore doc) or the original job_id.
+    post = None
+    post_id = job_id
+    try:
+        snap = await db_async.collection("posts").document(job_id).get()
+        if snap.exists:
+            post = snap.to_dict() or {}
+            post_id = snap.id
+    except Exception:
+        pass
+
+    if post is None:
+        # Try querying by job_id field (stored inside the post doc)
+        try:
+            query = db_async.collection("posts").where("job_id", "==", job_id).limit(1)
+            snaps = await query.get()
+            if snaps:
+                post = snaps[0].to_dict() or {}
+                post_id = snaps[0].id
+        except Exception:
+            pass
+
+    if post is None:
+        raise HTTPException(404, "Job not found")
+
+    # Normalise created_at
+    created_at = post.get("created_at")
+    if created_at and not isinstance(created_at, str):
+        try:
+            created_at = created_at.isoformat()
+        except Exception:
+            created_at = str(created_at)
+
+    # Fetch per-user vote
+    my_vote = "none"
+    if uid:
+        try:
+            vote_doc = await db_async.collection("post_votes").document(f"{post_id}:{uid}").get()
+            if vote_doc.exists:
+                my_vote = (vote_doc.to_dict() or {}).get("vote", "none")
+        except Exception:
+            pass
+
+    result_dict = {
+        "ai_score": post.get("ai_score"),
+        "essence": post.get("essence", ""),
+        "explanation": post.get("summary", ""),
+        "claims": post.get("claims", []),
+    }
+
+    return ResultResponse(
+        job_id=job_id,
+        status="done",
+        step="Completed",
+        post_id=post_id,
+        content_hash=post.get("content_hash"),
+        cached=False,
+        submitted_by=post.get("submitted_by", "community"),
+        my_vote=my_vote,
+        result=result_dict,
+    )
 
 
 @router.get("/results", response_model=list[AnalysisListItem])
 async def list_results(req: Request):
-    items: list[AnalysisListItem] = []
-<<<<<<< HEAD
-    for job_id, job in list(_job_store.items()):
-=======
+    """Return all completed analyses.
+
+    Strategy:
+    1. Read ALL posts from Firestore (persistent across restarts).
+    2. Merge any in-memory jobs that completed this session but haven't been
+       written to Firestore yet (edge case: race between write and read).
+    3. Deduplicate by content_hash so the same article analysed twice shows once.
+    4. Attach per-user vote state if the caller is authenticated.
+    """
     uid = await _get_uid_from_request(req)
+
+    # ── 1. Load from Firestore ──────────────────────────────────────────────
     seen_hashes: set[str] = set()
+    # Map post_id -> raw dict so we can merge in-memory data on top
+    posts_by_id: dict[str, dict] = {}
+    try:
+        post_snaps = await db_async.collection("posts").get()
+        for snap in post_snaps:
+            post = snap.to_dict() or {}
+            post_id = snap.id
+            content_hash = post.get("content_hash")
+            # Deduplicate by content_hash
+            if content_hash:
+                if content_hash in seen_hashes:
+                    continue
+                seen_hashes.add(content_hash)
+            posts_by_id[post_id] = {**post, "post_id": post_id}
+    except Exception as exc:
+        print(f"[analyze] failed to load posts from Firestore: {exc}")
+
+    # ── 2. Merge live in-memory jobs (may have fresher counter data) ────────
     for job_id, job in _job_store.items():
         if job.get("status") != "done":
             continue
         if bool(job.get("cached", False)):
             continue
+        post_id = job.get("post_id") or job_id
         content_hash = job.get("content_hash")
+        # If already covered by Firestore, just refresh counters
+        if post_id in posts_by_id:
+            posts_by_id[post_id]["upvotes"] = int(job.get("upvotes", 0) or 0)
+            posts_by_id[post_id]["downvotes"] = int(job.get("downvotes", 0) or 0)
+            posts_by_id[post_id]["disputes"] = int(job.get("disputes", 0) or 0)
+            continue
+        # Not in Firestore yet – add directly from memory
         if content_hash:
             if content_hash in seen_hashes:
                 continue
             seen_hashes.add(content_hash)
->>>>>>> ed1931a7af844fe3dc4011d26a12230af5e052a0
-        await _sync_job_counts_from_post(job_id)
-        await _sync_user_vote(job_id, uid)
+        result = job.get("result") or {}
+        posts_by_id[post_id] = {
+            "post_id": post_id,
+            "id": post_id,
+            "job_id": job_id,
+            "input_type": job.get("input_type"),
+            "raw_input": job.get("raw_input"),
+            "content_hash": content_hash,
+            "summary": result.get("explanation", ""),
+            "essence": result.get("essence", ""),
+            "ai_score": result.get("ai_score", 0.5),
+            "claims": result.get("claims", []),
+            "submitted_by": job.get("submitted_by", "community"),
+            "created_at": job.get("created_at"),
+            "upvotes": int(job.get("upvotes", 0) or 0),
+            "downvotes": int(job.get("downvotes", 0) or 0),
+            "disputes": int(job.get("disputes", 0) or 0),
+        }
+
+    # ── 3. Fetch per-user vote and build response ───────────────────────────
+    items: list[AnalysisListItem] = []
+    for post_id, post in posts_by_id.items():
+        my_vote = "none"
+        if uid:
+            try:
+                vote_doc = await db_async.collection("post_votes").document(f"{post_id}:{uid}").get()
+                if vote_doc.exists:
+                    my_vote = (vote_doc.to_dict() or {}).get("vote", "none")
+            except Exception:
+                pass
+
+        # Reconstruct result dict in the shape the frontend expects
+        result_dict = {
+            "ai_score": post.get("ai_score"),
+            "essence": post.get("essence", ""),
+            "explanation": post.get("summary", ""),
+            "claims": post.get("claims", []),
+        }
+
+        # created_at may be a Firestore DatetimeWithNanoseconds; normalise to str
+        created_at = post.get("created_at")
+        if created_at and not isinstance(created_at, str):
+            try:
+                created_at = created_at.isoformat()
+            except Exception:
+                created_at = str(created_at)
+
+        # job_id: prefer in-memory mapping, else use post_id
+        job_id = post.get("job_id") or post_id
+
         items.append(
             AnalysisListItem(
                 job_id=job_id,
-                status=job.get("status", "queued"),
-                step=job.get("step"),
-                input_type=job.get("input_type"),
-                raw_input=job.get("raw_input"),
-                created_at=job.get("created_at"),
-                result=job.get("result"),
-                content_hash=job.get("content_hash"),
-                cached=bool(job.get("cached", False)),
-                post_id=job.get("post_id"),
-                submitted_by=job.get("submitted_by"),
-                my_vote=job.get("my_vote"),
-                upvotes=job.get("upvotes", 0),
-                downvotes=job.get("downvotes", 0),
-                disputes=job.get("disputes", 0),
+                status="done",
+                step="Completed",
+                input_type=post.get("input_type"),
+                raw_input=post.get("raw_input", ""),
+                created_at=created_at,
+                result=result_dict,
+                content_hash=post.get("content_hash"),
+                cached=False,
+                post_id=post_id,
+                submitted_by=post.get("submitted_by", "community"),
+                my_vote=my_vote,
+                upvotes=int(post.get("upvotes", 0) or 0),
+                downvotes=int(post.get("downvotes", 0) or 0),
+                disputes=int(post.get("disputes", 0) or 0),
             )
         )
+
+    # Sort newest first
+    items.sort(key=lambda x: x.created_at or "", reverse=True)
     return items

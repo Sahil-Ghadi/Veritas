@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { VerdictBadge } from "@/components/VerdictBadge";
 import { CredibilityMeter } from "@/components/CredibilityMeter";
 import { castVote, getAllAnalyses } from "@/lib/api";
-import { ThumbsUp, ThumbsDown, MessageSquareWarning, TrendingUp, Clock, Flame, Search, Link2, FileText, Image as ImageIcon } from "lucide-react";
+import { ThumbsUp, ThumbsDown, MessageSquareWarning, TrendingUp, Clock, Flame, Search, Link2, FileText, Image as ImageIcon, Loader2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { cn } from "@/lib/utils";
 import { Analysis } from "@/lib/types";
@@ -26,13 +26,18 @@ const Community = () => {
   const [analyses, setAnalyses] = useState<Analysis[]>([]);
   const [votingIds, setVotingIds] = useState<Record<string, boolean>>({});
 
+  const [isLoading, setIsLoading] = useState(true);
+
   useEffect(() => {
     const load = async () => {
+      setIsLoading(true);
       try {
         const data = await getAllAnalyses();
         setAnalyses(data);
       } catch {
         setAnalyses([]);
+      } finally {
+        setIsLoading(false);
       }
     };
     void load();
@@ -136,87 +141,93 @@ const Community = () => {
             </div>
 
             <div className="space-y-4">
-              {visibleAnalyses.map((a, i) => (
-                <Link
-                  key={a.id}
-                  href={`/analysis/${a.id}`}
-                  className="block group animate-fade-in-up"
-                  style={{ animationDelay: `${i * 60}ms` }}
-                >
-                  <Card className="p-5 md:p-6 bg-gradient-card border-border/60 hover:border-primary/40 transition-all duration-500 ease-smooth hover:-translate-y-0.5 hover:shadow-elegant">
-                    <div className="flex flex-col md:flex-row gap-5">
-                      {/* Vote column */}
-                      <div className="flex md:flex-col items-center gap-2 md:w-16 shrink-0">
-                        <button
-                          className={cn(
-                            "p-1.5 rounded hover:bg-success/10 hover:text-success transition-colors",
-                            a.myVote === "up" && "text-success bg-success/10"
-                          )}
-                          onClick={(e) => {
-                            e.preventDefault();
-                            void handleVote(a.postId, "up");
-                          }}
-                          disabled={Boolean(votingIds[a.postId || a.id])}
-                        >
-                          <ThumbsUp className="h-4 w-4" />
-                        </button>
-                        <span className="font-mono text-sm font-semibold">
-                          {(a.upvotes - a.downvotes).toLocaleString()}
-                        </span>
-                        <button
-                          className={cn(
-                            "p-1.5 rounded hover:bg-destructive/10 hover:text-destructive transition-colors",
-                            a.myVote === "down" && "text-destructive bg-destructive/10"
-                          )}
-                          onClick={(e) => {
-                            e.preventDefault();
-                            void handleVote(a.postId, "down");
-                          }}
-                          disabled={Boolean(votingIds[a.postId || a.id])}
-                        >
-                          <ThumbsDown className="h-4 w-4" />
-                        </button>
-                      </div>
-
-                      {/* Content */}
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-2 flex-wrap">
-                          <VerdictBadge verdict={a.verdict} size="sm" />
-                          <InputTypeBadge type={a.inputType} />
-                          <span className="text-xs font-mono text-muted-foreground">via {a.source}</span>
-                        </div>
-
-                        <h3 className="font-serif text-xl md:text-2xl font-semibold leading-tight text-balance group-hover:text-primary transition-colors">
-                          {a.title}
-                        </h3>
-
-                        <p className="text-sm text-muted-foreground mt-2 leading-relaxed line-clamp-2">{a.summary}</p>
-
-                        <div className="grid sm:grid-cols-2 gap-4 mt-4 max-w-md">
-                          <CredibilityMeter score={a.overallCredibility} label="Credibility" size="sm" />
-                          <CredibilityMeter score={a.overallConfidence} label="Confidence" size="sm" />
-                        </div>
-
-                        <div className="flex items-center gap-4 mt-4 pt-4 border-t border-border/40 text-xs text-muted-foreground font-mono">
-                          <span>@{a.submittedBy}</span>
-                          <span>·</span>
-                          <span>{a.submittedAt}</span>
-                          <span>·</span>
-                          <span className="flex items-center gap-1">
-                            <MessageSquareWarning className="h-3 w-3 text-warning" />
-                            {a.disputes} disputes
+              {isLoading ? (
+                <div className="flex flex-col items-center justify-center py-24 text-muted-foreground animate-pulse">
+                  <Loader2 className="h-8 w-8 animate-spin mb-4 text-primary" />
+                  <p>Loading community analyses...</p>
+                </div>
+              ) : visibleAnalyses.length > 0 ? (
+                visibleAnalyses.map((a, i) => (
+                  <Link
+                    key={a.postId || a.id}
+                    href={`/analysis/${a.postId || a.id}`}
+                    className="block group animate-fade-in-up"
+                    style={{ animationDelay: `${i * 60}ms` }}
+                  >
+                    <Card className="p-5 md:p-6 bg-gradient-card border-border/60 hover:border-primary/40 transition-all duration-500 ease-smooth hover:-translate-y-0.5 hover:shadow-elegant">
+                      <div className="flex flex-col md:flex-row gap-5">
+                        {/* Vote column */}
+                        <div className="flex md:flex-col items-center gap-2 md:w-16 shrink-0">
+                          <button
+                            className={cn(
+                              "p-1.5 rounded hover:bg-success/10 hover:text-success transition-colors",
+                              a.myVote === "up" && "text-success bg-success/10"
+                            )}
+                            onClick={(e) => {
+                              e.preventDefault();
+                              void handleVote(a.postId, "up");
+                            }}
+                            disabled={Boolean(votingIds[a.postId || a.id])}
+                          >
+                            <ThumbsUp className="h-4 w-4" />
+                          </button>
+                          <span className="font-mono text-sm font-semibold">
+                            {(a.upvotes - a.downvotes).toLocaleString()}
                           </span>
-                          {a.tags.slice(0, 2).map((t) => (
-                            <span key={t} className="hidden md:inline px-2 py-0.5 rounded-full bg-secondary">#{t}</span>
-                          ))}
+                          <button
+                            className={cn(
+                              "p-1.5 rounded hover:bg-destructive/10 hover:text-destructive transition-colors",
+                              a.myVote === "down" && "text-destructive bg-destructive/10"
+                            )}
+                            onClick={(e) => {
+                              e.preventDefault();
+                              void handleVote(a.postId, "down");
+                            }}
+                            disabled={Boolean(votingIds[a.postId || a.id])}
+                          >
+                            <ThumbsDown className="h-4 w-4" />
+                          </button>
+                        </div>
+
+                        {/* Content */}
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-2 flex-wrap">
+                            <VerdictBadge verdict={a.verdict} size="sm" />
+                            <InputTypeBadge type={a.inputType} />
+                            <span className="text-xs font-mono text-muted-foreground">via {a.source}</span>
+                          </div>
+
+                          <h3 className="font-serif text-xl md:text-2xl font-semibold leading-tight text-balance group-hover:text-primary transition-colors">
+                            {a.title}
+                          </h3>
+
+                          <p className="text-sm text-muted-foreground mt-2 leading-relaxed line-clamp-2">{a.summary}</p>
+
+                          <div className="grid sm:grid-cols-2 gap-4 mt-4 max-w-md">
+                            <CredibilityMeter score={a.overallCredibility} label="Credibility" size="sm" />
+                            <CredibilityMeter score={a.overallConfidence} label="Confidence" size="sm" />
+                          </div>
+
+                          <div className="flex items-center gap-4 mt-4 pt-4 border-t border-border/40 text-xs text-muted-foreground font-mono">
+                            <span>@{a.submittedBy}</span>
+                            <span>·</span>
+                            <span>{a.submittedAt}</span>
+                            <span>·</span>
+                            <span className="flex items-center gap-1">
+                              <MessageSquareWarning className="h-3 w-3 text-warning" />
+                              {a.disputes} disputes
+                            </span>
+                            {a.tags.slice(0, 2).map((t) => (
+                              <span key={t} className="hidden md:inline px-2 py-0.5 rounded-full bg-secondary">#{t}</span>
+                            ))}
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  </Card>
-                </Link>
-              ))}
-              {visibleAnalyses.length === 0 && (
-                <Card className="p-6 text-sm text-muted-foreground bg-gradient-card border-border/60">
+                    </Card>
+                  </Link>
+                ))
+              ) : (
+                <Card className="p-6 text-sm text-muted-foreground bg-gradient-card border-border/60 text-center">
                   No analyses available yet. Run an analysis from the analyze page and it will appear here.
                 </Card>
               )}

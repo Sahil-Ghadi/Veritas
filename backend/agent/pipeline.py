@@ -5,13 +5,11 @@ from .nodes import (
     essence_extractor_node,
     claim_splitter_node,
     claim_router_node,
-    query_builder_node,
-    adversarial_searcher_node,
     score_aggregator_node,
     explanation_generator_node,
     cache_writer_node,
 )
-from .llm_judge_subgraph import judge_subgraph
+from .llm_judge_subgraph import claim_processing_subgraph
 from schema.state import GraphState
 
 
@@ -28,9 +26,7 @@ def build_pipeline():
     workflow.add_node("cache_writer", cache_writer_node)
 
     # ── Per-claim nodes (run in parallel via Send) ─────────
-    workflow.add_node("query_builder", query_builder_node)
-    workflow.add_node("adversarial_searcher", adversarial_searcher_node)
-    workflow.add_node("llm_judge", judge_subgraph)
+    workflow.add_node("claim_processing", claim_processing_subgraph)
 
     # ── Entry ──────────────────────────────────────────────
     workflow.set_entry_point("cache_check")
@@ -54,14 +50,10 @@ def build_pipeline():
         claim_router_node,
     )
 
-    # ── Per-claim linear pipeline ──────────────────────────
-    workflow.add_edge("query_builder", "adversarial_searcher")
-    workflow.add_edge("adversarial_searcher", "llm_judge")
-
-    # ── Fan-in: all llm_judge branches → score_aggregator ──
+    # ── Fan-in: all claim_processing branches → score_aggregator ──
     # claim_results uses operator.add reducer so each branch's
     # [ClaimResult] is appended rather than overwritten
-    workflow.add_edge("llm_judge", "score_aggregator")
+    workflow.add_edge("claim_processing", "score_aggregator")
 
     # ── Linear post-processing ─────────────────────────────
     workflow.add_edge("score_aggregator", "explanation_generator")

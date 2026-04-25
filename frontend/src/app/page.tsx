@@ -36,7 +36,10 @@ const Landing = () => {
 
         <div className="flex-1 flex items-center justify-end gap-4">
           <Button variant="ghost" asChild className="hidden sm:flex hover:text-foreground">
-            <Link href="/analyze">Get Started</Link>
+            <Link href="/auth">Sign in</Link>
+          </Button>
+          <Button asChild className="hidden sm:flex bg-primary text-primary-foreground hover:opacity-90 shadow-glow">
+            <Link href="/auth">Get Started</Link>
           </Button>
         </div>
       </header>

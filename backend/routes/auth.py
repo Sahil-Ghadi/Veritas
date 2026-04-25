@@ -32,10 +32,16 @@ async def google_auth(body: dict):
                 "name": name,
                 "picture": picture,
                 "created_at": gcloud_firestore.SERVER_TIMESTAMP,
+                "last_login": gcloud_firestore.SERVER_TIMESTAMP,
             }
         )
         is_new_user = True
     else:
+        await user_ref.update(
+            {
+                "last_login": gcloud_firestore.SERVER_TIMESTAMP,
+            }
+        )
         is_new_user = False
 
     return {

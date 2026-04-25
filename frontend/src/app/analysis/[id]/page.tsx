@@ -6,14 +6,14 @@ import { useEffect, useState } from "react";
 import { NavigationSidebar } from "@/components/NavigationSidebar";
 import { ActivitySidebar } from "@/components/ActivitySidebar";
 import { AnalysisResult } from "@/components/AnalysisResult";
-import { getAnalysisById, submitDispute } from "@/lib/api";
+import { getAnalysisById, submitDispute, getDisputesByPostId } from "@/lib/api";
 import { auth } from "@/lib/firebase";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ArrowLeft, MessageSquareWarning, Send, LogIn, AlertCircle, CheckCircle2, Loader2 } from "lucide-react";
+import { ArrowLeft, MessageSquareWarning, Send, LogIn, AlertCircle, CheckCircle2, Loader2, History } from "lucide-react";
 import { Analysis } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -21,6 +21,7 @@ const AnalysisDetail = () => {
   const params = useParams();
   const id = params?.id as string;
   const [analysis, setAnalysis] = useState<Analysis | null>(null);
+  const [disputes, setDisputes] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -47,6 +48,8 @@ const AnalysisDetail = () => {
           setError("Analysis not found.");
         } else {
           setAnalysis(data);
+          const disputesData = await getDisputesByPostId(data.postId || id);
+          setDisputes(disputesData);
         }
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to load analysis.");
@@ -166,14 +169,16 @@ const AnalysisDetail = () => {
                         value={String(claimIndex)}
                         onValueChange={(v) => setClaimIndex(Number(v))}
                       >
-                        <SelectTrigger className="bg-background/50">
+                        <SelectTrigger className="bg-background/50 h-auto min-h-[2.5rem] py-3 text-left [&>span]:line-clamp-none [&>span]:whitespace-normal [&>span]:break-words [&>span]:w-full">
                           <SelectValue placeholder="Select a claim" />
                         </SelectTrigger>
-                        <SelectContent>
+                        <SelectContent className="max-h-[300px] w-[var(--radix-select-trigger-width)]">
                           {analysis.claims.map((claim, i) => (
-                            <SelectItem key={i} value={String(i)}>
-                              <span className="text-xs font-mono text-muted-foreground mr-2">#{i + 1}</span>
-                              {claim.text.length > 80 ? claim.text.slice(0, 80) + "…" : claim.text}
+                            <SelectItem key={i} value={String(i)} className="whitespace-normal py-3">
+                              <span className="flex items-start text-left">
+                                <span className="text-xs font-mono text-muted-foreground mr-3 mt-0.5 shrink-0">#{i + 1}</span>
+                                <span className="leading-tight">{claim.text}</span>
+                              </span>
                             </SelectItem>
                           ))}
                         </SelectContent>
@@ -303,6 +308,57 @@ const AnalysisDetail = () => {
                 </Card>
               )}
             </section>
+
+            {disputes.length > 0 && (
+              <section className="mt-12 pt-12 border-t border-border/40">
+                <div className="flex items-center gap-2 mb-6">
+                  <History className="h-5 w-5 text-muted-foreground" />
+                  <h2 className="font-serif text-2xl font-semibold">Dispute History</h2>
+                </div>
+                <div className="space-y-4">
+                  {disputes.map((d, i) => (
+                    <Card key={d.id || i} className="p-5 bg-background border-border/40">
+                      <div className="flex items-start justify-between mb-2">
+                        <div className="flex items-center gap-2">
+                          <span className={cn(
+                            "text-xs font-semibold px-2 py-0.5 rounded-full uppercase",
+                            d.status === "VALIDATED" ? "bg-success/20 text-success" :
+                            d.status === "REJECTED" ? "bg-warning/20 text-warning" :
+                            "bg-muted text-muted-foreground"
+                          )}>
+                            {d.status}
+                          </span>
+                          <span className="text-xs text-muted-foreground">
+                            {new Date(d.created_at).toLocaleDateString()}
+                          </span>
+                        </div>
+                        {d.score_impact !== undefined && d.score_impact !== null && (
+                          <span className={cn(
+                            "text-sm font-bold",
+                            d.score_impact > 0 ? "text-success" : d.score_impact < 0 ? "text-destructive" : "text-muted-foreground"
+                          )}>
+                            {d.score_impact > 0 ? "+" : ""}{d.score_impact} credibility
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-sm font-medium mt-3 mb-1">Counter-argument:</p>
+                      <p className="text-sm text-muted-foreground bg-muted/30 p-3 rounded-md italic">
+                        "{d.counter_argument}"
+                      </p>
+                      
+                      {d.validation_result?.reason && (
+                        <div className="mt-4 pt-3 border-t border-border/30">
+                          <p className="text-sm font-medium mb-1">AI Verdict:</p>
+                          <p className="text-sm text-muted-foreground">
+                            {d.validation_result.reason}
+                          </p>
+                        </div>
+                      )}
+                    </Card>
+                  ))}
+                </div>
+              </section>
+            )}
 
           </div>
         </main>

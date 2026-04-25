@@ -47,12 +47,14 @@ def calculate_score_impact(
     confidence: float,
     source_credibility: float,
     claim_centrality: float,
+    is_supporting: bool = False,
 ) -> float:
     """
-    Return the (negative) credibility-score delta for a validated dispute.
+    Return the credibility-score delta for a validated dispute.
 
     Formula:
-        impact = round(-15 × (confidence×0.5 + source_credibility×0.3 + claim_centrality×0.2), 2)
+        impact = round(direction * 15 × (confidence×0.5 + source_credibility×0.3 + claim_centrality×0.2), 2)
+        where direction is 1.0 if is_supporting is True, else -1.0.
 
     All three inputs are expected to be floats in [0, 1].
 
@@ -60,12 +62,13 @@ def calculate_score_impact(
     --------
     >>> calculate_score_impact(0.82, 0.5, 0.5)
     -9.9
-    >>> calculate_score_impact(1.0, 1.0, 1.0)
-    -15.0
+    >>> calculate_score_impact(1.0, 1.0, 1.0, is_supporting=True)
+    15.0
     >>> calculate_score_impact(0.0, 0.0, 0.0)
     -0.0
     """
-    raw = -15.0 * (confidence * 0.5 + source_credibility * 0.3 + claim_centrality * 0.2)
+    direction = 1.0 if is_supporting else -1.0
+    raw = direction * 15.0 * (confidence * 0.5 + source_credibility * 0.3 + claim_centrality * 0.2)
     return round(raw, 2)
 
 
@@ -107,8 +110,8 @@ async def apply_score_impact(
     post_data: dict[str, Any] = _post_raw if _post_raw is not None else {}
     current_score: float = float(post_data.get("credibility_score", 50.0))
 
-    # ── Clamp: score can never go below 0 ─────────────────────────────────────
-    new_score = round(max(0.0, current_score + impact), 2)
+    # ── Clamp: score must be between 0 and 100 ───────────────────────────────
+    new_score = round(min(100.0, max(0.0, current_score + impact)), 2)
 
     # ── Build score-history entry ──────────────────────────────────────────────
     history_entry = {
@@ -127,6 +130,7 @@ async def apply_score_impact(
             "credibility_score": new_score,
             # ArrayUnion appends the entry without overwriting the existing array.
             "score_history": gcloud_firestore.ArrayUnion([history_entry]),
+            "disputes": gcloud_firestore.Increment(1),
         },
     )
 

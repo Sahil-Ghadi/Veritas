@@ -182,7 +182,6 @@ async def create_dispute(current_user: dict, request: DisputeRequest) -> dict:
     await dispute_ref.set(dispute_doc)
     await post_ref.set(
         {
-            "disputes": gcloud_firestore.Increment(1),
             "updated_at": datetime.now(timezone.utc),
         },
         merge=True,
@@ -244,10 +243,14 @@ async def create_dispute(current_user: dict, request: DisputeRequest) -> dict:
     # source_credibility and claim_centrality default to 0.5 until real scorers
     # are implemented (see score_service.py TODO comments).
     confidence: float = float(verification_result.get("confidence", 0.5))
+    new_verdict: str = verification_result.get("new_verdict", "").upper()
+    is_supporting: bool = (new_verdict == "SUPPORTED")
+
     impact: float = calculate_score_impact(
         confidence=confidence,
         source_credibility=0.5,  # TODO: replace with real source credibility scorer
         claim_centrality=0.5,  # TODO: replace with real claim centrality scorer
+        is_supporting=is_supporting,
     )
 
     # ── Atomic batch: update post score + dispute status ──────────────────────

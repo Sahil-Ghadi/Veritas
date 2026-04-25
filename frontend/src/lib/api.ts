@@ -91,7 +91,7 @@ const toEvidence = (url: string, index: number, stance: "supports" | "contradict
 });
 
 const toClaim = (
-  claim: NonNullable<AnalyzeResultResponse["result"]>["claims"][number],
+  claim: NonNullable<NonNullable<AnalyzeResultResponse["result"]>["claims"]>[number],
   index: number
 ): Claim => ({
   id: `c-${index + 1}`,
@@ -191,7 +191,7 @@ export async function getAnalysisResult(jobId: string): Promise<AnalyzeResultRes
 
 export async function pollAnalysisUntilDone(
   jobId: string,
-  maxAttempts = 200,
+  maxAttempts = 240,
   onProgress?: (status: AnalyzeResultResponse) => void
 ): Promise<AnalyzeResultResponse> {
   for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
@@ -200,7 +200,7 @@ export async function pollAnalysisUntilDone(
     if (result.status === "done" || result.status === "error") return result;
     await new Promise((resolve) => setTimeout(resolve, 1500));
   }
-  throw new Error("Analysis timed out. Please try again.");
+  throw new Error("Analysis timed out after 6 minutes. Please try again.");
 }
 
 export async function getAllAnalyses(): Promise<Analysis[]> {
@@ -277,6 +277,14 @@ export async function submitDispute(payload: {
     },
     body: JSON.stringify(payload),
   });
+}
+
+export async function getDisputesByPostId(postId: string): Promise<any[]> {
+  try {
+    return await request<any[]>(`/api/posts/${postId}/disputes`);
+  } catch {
+    return [];
+  }
 }
 
 export async function castVote(postId: string, vote: "up" | "down" | "none") {

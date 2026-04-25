@@ -22,6 +22,7 @@ from core.firebase import verify_token
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from models.dispute import DisputeErrorCode
 from schema.dispute import DisputeRequest
+from google.cloud import firestore
 from services.dispute_service import DisputeError, create_dispute
 
 logger = logging.getLogger(__name__)
@@ -78,3 +79,47 @@ async def submit_dispute(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Internal server error",
         )
+
+@router.get(
+    "/posts/{post_id}/disputes",
+    summary="Get all disputes for a post",
+    status_code=status.HTTP_200_OK,
+)
+async def get_post_disputes(post_id: str):
+    try:
+        snaps = (
+            await db_async.collection("disputes")
+            .where("post_id", "==", post_id)
+            .order_by("created_at", direction=firestore.Query.DESCENDING)
+            .get()
+        )
+        disputes = []
+        for snap in snaps:
+            d = snap.to_dict()
+            if d:
+                # Convert datetime to string
+                if d.get("created_at"):
+                    d["created_at"] = d["created_at"].isoformat()
+                disputes.append(d)
+        return disputes
+    except Exception as exc:
+        logger.error(f"Error fetching disputes for post {post_id}: {exc}", exc_info=True)
+        # fallback if index doesn't exist
+        try:
+            snaps = (
+                await db_async.collection("disputes")
+                .where("post_id", "==", post_id)
+                .get()
+            )
+            disputes = []
+            for snap in snaps:
+                d = snap.to_dict()
+                if d:
+                    if d.get("created_at"):
+                        d["created_at"] = d["created_at"].isoformat()
+                    disputes.append(d)
+            # sort in python
+            disputes.sort(key=lambda x: x.get("created_at", ""), reverse=True)
+            return disputes
+        except Exception as inner_exc:
+            raise HTTPException(500, f"Error fetching disputes: {inner_exc}")

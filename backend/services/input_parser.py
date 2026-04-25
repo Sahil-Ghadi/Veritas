@@ -76,6 +76,11 @@ async def extract_text_from_image(base64_image: str, media_type: str = "image/jp
         temperature=0.0
     )
     
+    if base64_image.startswith("data:"):
+        image_url_str = base64_image
+    else:
+        image_url_str = f"data:{media_type};base64,{base64_image}"
+
     message = HumanMessage(
         content=[
             {
@@ -84,7 +89,7 @@ async def extract_text_from_image(base64_image: str, media_type: str = "image/jp
             },
             {
                 "type": "image_url",
-                "image_url": {"url": f"data:{media_type};base64,{base64_image}"}
+                "image_url": {"url": image_url_str}
             },
         ]
     )

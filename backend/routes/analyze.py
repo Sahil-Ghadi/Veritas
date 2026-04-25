@@ -57,19 +57,19 @@ class AnalysisListItem(BaseModel):
     disputes: int = 0
 
 
-async def _get_uid_from_request(req: Request) -> Optional[str]:
-    """Best-effort auth parsing. Returns uid if bearer token is valid."""
+async def _get_user_from_request(req: Request) -> dict:
+    """Best-effort auth parsing. Returns decoded token if bearer token is valid."""
     auth_header = req.headers.get("Authorization", "")
     if not auth_header.startswith("Bearer "):
-        return None
+        return {}
     token = auth_header.replace("Bearer ", "").strip()
     if not token:
-        return None
+        return {}
     try:
         decoded = firebase_auth.verify_id_token(token)
-        return decoded.get("uid")
+        return decoded
     except Exception:
-        return None
+        return {}
 
 
 async def _upsert_post_from_job(job_id: str, job: dict) -> None:
@@ -151,13 +151,13 @@ async def _run_pipeline(job_id: str, raw_input: str, input_type: str):
     from agent.pipeline import pipeline
 
     node_to_step = {
-        "cache_check": "Extracting content",
+        "cache_check": "Extracting essence",
         "input_parser": "Extracting essence",
         "essence_extractor": "Identifying claims",
-        "claim_splitter": "Evaluating claims",
+        "claim_splitter": "Evaluating evidence",
         "claim_processing": "Scoring credibility",
         "score_aggregator": "Generating verdict",
-        "explanation_generator": "Finalizing result",
+        "explanation_generator": "Completed",
         "cache_writer": "Completed",
     }
 
@@ -250,9 +250,11 @@ async def analyze(
     if req.input_type not in ("url", "text", "image"):
         raise HTTPException(400, "input_type must be 'url', 'text', or 'image'")
 
-    uid = await _get_uid_from_request(http_req)
-    submitted_by = "community"
-    if uid:
+    user_info = await _get_user_from_request(http_req)
+    uid = user_info.get("uid")
+    submitted_by = user_info.get("name") or user_info.get("email") or "community"
+    
+    if uid and submitted_by == "community":
         try:
             user_snap = await db_async.collection("users").document(uid).get()
             if user_snap.exists:
@@ -290,7 +292,8 @@ async def get_results(job_id: str, req: Request):
     Falls back to Firestore `posts` collection for completed analyses
     that survived a server restart.
     """
-    uid = await _get_uid_from_request(req)
+    user_info = await _get_user_from_request(req)
+    uid = user_info.get("uid")
     job = _job_store.get(job_id)
 
     if job is not None:
@@ -375,7 +378,8 @@ async def list_results(req: Request):
     3. Deduplicate by content_hash so the same article analysed twice shows once.
     4. Attach per-user vote state if the caller is authenticated.
     """
-    uid = await _get_uid_from_request(req)
+    user_info = await _get_user_from_request(req)
+    uid = user_info.get("uid")
 
     # ── 1. Load from Firestore ──────────────────────────────────────────────
     seen_hashes: set[str] = set()

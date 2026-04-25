@@ -2,23 +2,19 @@ import { CheckCircle2, Loader2, Search, Sparkles, ScanLine, Scale } from "lucide
 import { cn } from "@/lib/utils";
 
 const STEPS = [
-  { id: "Queued", label: "Queued", icon: Loader2 },
   { id: "Initializing pipeline", label: "Initializing pipeline", icon: Loader2 },
   { id: "Checking cache", label: "Checking cache", icon: Loader2 },
-  { id: "Extracting content", label: "Extracting content", icon: ScanLine },
   { id: "Extracting essence", label: "Extracting essence", icon: Sparkles },
   { id: "Identifying claims", label: "Identifying claims", icon: Search },
-  { id: "Building search queries", label: "Building search queries", icon: Search },
   { id: "Cross-referencing sources", label: "Cross-referencing sources", icon: Sparkles },
   { id: "Evaluating evidence", label: "Evaluating evidence", icon: Sparkles },
   { id: "Scoring credibility", label: "Scoring credibility", icon: Scale },
   { id: "Generating verdict", label: "Generating verdict", icon: CheckCircle2 },
-  { id: "Finalizing result", label: "Finalizing result", icon: CheckCircle2 },
   { id: "Completed", label: "Completed", icon: CheckCircle2 },
 ];
 
 export const AnalysisProgress = ({ currentStep }: { currentStep?: string }) => {
-  const activeStep = currentStep || "Queued";
+  const activeStep = currentStep || "Initializing pipeline";
   const activeIndex = Math.max(STEPS.findIndex((s) => s.id === activeStep), 0);
 
   return (

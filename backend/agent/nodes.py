@@ -1,5 +1,8 @@
 import asyncio
+import hashlib
+from datetime import datetime, timezone, timedelta
 from typing import Any, List
+from ..core.firebase import db_async
 from ..schema.state import (
     GraphState,
     EssenceOutput,
@@ -22,14 +25,60 @@ from ..services.input_parser import parse_input
 from ..services.web_search import adversarial_search
 from ..services.essence_guard import check_essence_drift
 
+_CACHE_COLLECTION = "analysis_cache"
+_CACHE_TTL_DAYS = 7
+
 # Node 1 — Cache Check
 async def cache_check_node(state: GraphState) -> dict:
-    return {"cached": False, "cached_result": None}
+    """
+    Hash raw_input → query Firestore analysis_cache.
+    On a hit within TTL: restore all result fields so the pipeline can skip
+    straight to score_aggregator.
+    On a miss: just set content_hash so cache_writer can key correctly.
+    """
+    raw_hash = hashlib.sha256(state["raw_input"].strip().encode()).hexdigest()
+    try:
+        doc_snap = await db_async.collection(_CACHE_COLLECTION).document(raw_hash).get()
+        if doc_snap.exists:
+            data: dict = doc_snap.to_dict() or {}
+            cached_at = data.get("cached_at")
+            if cached_at is not None:
+                # Firestore returns timezone-aware DatetimeWithNanoseconds
+                if hasattr(cached_at, "tzinfo") and cached_at.tzinfo is None:
+                    cached_at = cached_at.replace(tzinfo=timezone.utc)
+                age = datetime.now(timezone.utc) - cached_at
+                if age < timedelta(days=_CACHE_TTL_DAYS):
+                    return {
+                        "cached": True,
+                        "content_hash": raw_hash,
+                        "parsed_text": data.get("parsed_text", ""),
+                        "essence": data.get("essence", ""),
+                        "framing_tone": data.get("framing_tone", "neutral"),
+                        "primary_actor": data.get("primary_actor", ""),
+                        "implied_consequence": data.get("implied_consequence", ""),
+                        "claims": data.get("claims", []),
+                        "claim_results": data.get("claim_results", []),
+                        "ai_score": data.get("ai_score", 0.5),
+                        "score_breakdown": data.get("score_breakdown", {}),
+                        "article_level_explanation": data.get("article_level_explanation", ""),
+                        "drift_score": data.get("drift_score", 0.0),
+                        "cached_result": data,
+                    }
+    except Exception as exc:
+        # Cache failure is non-fatal — proceed with fresh analysis
+        print(f"[cache_check] Firestore error: {exc}")
+
+    return {"cached": False, "cached_result": None, "content_hash": raw_hash}
 
 # Node 2 — Input Parser
 async def input_parser_node(state: GraphState) -> dict:
+    """
+    Fetch/parse the article text.
+    content_hash is intentionally NOT returned here — cache_check_node is the
+    authoritative owner of that field (keyed by sha256(raw_input)).
+    """
     result = await parse_input(state["raw_input"], state["input_type"])
-    return result
+    return {"parsed_text": result["parsed_text"]}
 
 # Node 3 — Essence Extractor
 async def essence_extractor_node(state: GraphState) -> dict:
@@ -241,4 +290,33 @@ async def explanation_generator_node(state: GraphState) -> dict:
 
 # Node 10 — Cache Writer
 async def cache_writer_node(state: GraphState) -> dict:
-    return {"content_hash_written": True}
+    """
+    Persist the full analysis result to Firestore analysis_cache.
+    Uses the same sha256(raw_input) key as cache_check_node.
+    Errors here are non-fatal — the caller already has the result.
+    """
+    content_hash = state.get("content_hash")
+    if not content_hash:
+        return {"content_hash_written": False}
+
+    try:
+        cache_doc = {
+            "content_hash": content_hash,
+            "cached_at": datetime.now(timezone.utc),
+            "parsed_text": state.get("parsed_text", ""),
+            "essence": state.get("essence", ""),
+            "framing_tone": state.get("framing_tone", ""),
+            "primary_actor": state.get("primary_actor", ""),
+            "implied_consequence": state.get("implied_consequence", ""),
+            "claims": state.get("claims", []),
+            "claim_results": state.get("claim_results", []),
+            "ai_score": state.get("ai_score", 0.5),
+            "score_breakdown": state.get("score_breakdown", {}),
+            "article_level_explanation": state.get("article_level_explanation", ""),
+            "drift_score": state.get("drift_score", 0.0),
+        }
+        await db_async.collection(_CACHE_COLLECTION).document(content_hash).set(cache_doc)
+        return {"content_hash_written": True}
+    except Exception as exc:
+        print(f"[cache_writer] Firestore error: {exc}")
+        return {"content_hash_written": False}

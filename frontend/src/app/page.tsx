@@ -1,8 +1,14 @@
+"use client";
+
 import Link from "next/link";
 import { SiteFooter } from "@/components/SiteFooter";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { VerdictBadge } from "@/components/VerdictBadge";
+import { useEffect, useState } from "react";
+import { onAuthStateChanged } from "firebase/auth";
+import { useRouter } from "next/navigation";
+import { auth } from "@/lib/firebase";
 import {
   ArrowRight,
   ScanSearch,
@@ -20,6 +26,28 @@ import {
 } from "lucide-react";
 
 const Landing = () => {
+  const router = useRouter();
+  const [checkingAuth, setCheckingAuth] = useState(true);
+
+  useEffect(() => {
+    const unsub = onAuthStateChanged(auth, (user) => {
+      if (user) {
+        router.replace("/analyze");
+        return;
+      }
+      setCheckingAuth(false);
+    });
+    return () => unsub();
+  }, [router]);
+
+  if (checkingAuth) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background text-muted-foreground">
+        Loading...
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen flex flex-col bg-background">
       {/* LANDING NAV */}

@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { VerdictBadge } from "@/components/VerdictBadge";
 import { CredibilityMeter } from "@/components/CredibilityMeter";
-import { getAllAnalyses } from "@/lib/api";
+import { castVote, getAllAnalyses } from "@/lib/api";
 import { ThumbsUp, ThumbsDown, MessageSquareWarning, TrendingUp, Clock, Flame, Search, Link2, FileText, Image as ImageIcon } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { cn } from "@/lib/utils";
@@ -24,6 +24,7 @@ const filters = [
 const Community = () => {
   const [active, setActive] = useState("trending");
   const [analyses, setAnalyses] = useState<Analysis[]>([]);
+  const [votingIds, setVotingIds] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     const load = async () => {
@@ -43,6 +44,56 @@ const Community = () => {
     if (active === "top") return [...analyses].sort((a, b) => (b.upvotes - b.downvotes) - (a.upvotes - a.downvotes));
     return analyses;
   }, [active, analyses]);
+
+  const handleVote = async (postId: string, vote: "up" | "down") => {
+    if (votingIds[postId]) return;
+    const target = analyses.find((a) => a.id === postId);
+    if (!target) return;
+
+    const oldVote = target.myVote || "none";
+    const nextVote = oldVote === vote ? "none" : vote;
+
+    setVotingIds((prev) => ({ ...prev, [postId]: true }));
+    setAnalyses((prev) =>
+      prev.map((a) => {
+        if (a.id !== postId) return a;
+        let up = a.upvotes;
+        let down = a.downvotes;
+        if (oldVote === "up") up -= 1;
+        if (oldVote === "down") down -= 1;
+        if (nextVote === "up") up += 1;
+        if (nextVote === "down") down += 1;
+        return { ...a, upvotes: Math.max(0, up), downvotes: Math.max(0, down), myVote: nextVote };
+      })
+    );
+
+    try {
+      const result = await castVote(postId, nextVote);
+      setAnalyses((prev) =>
+        prev.map((a) =>
+          a.id === postId
+            ? {
+                ...a,
+                upvotes: result.upvotes,
+                downvotes: result.downvotes,
+                myVote: result.my_vote,
+              }
+            : a
+        )
+      );
+    } catch {
+      try {
+        const refreshed = await getAllAnalyses();
+        setAnalyses(refreshed);
+      } catch {
+        setAnalyses((prev) =>
+          prev.map((a) => (a.id === postId ? { ...a, myVote: oldVote } : a))
+        );
+      }
+    } finally {
+      setVotingIds((prev) => ({ ...prev, [postId]: false }));
+    }
+  };
 
   return (
     <div className="min-h-screen flex flex-col md:flex-row bg-background">
@@ -96,8 +147,15 @@ const Community = () => {
                       {/* Vote column */}
                       <div className="flex md:flex-col items-center gap-2 md:w-16 shrink-0">
                         <button
-                          className="p-1.5 rounded hover:bg-success/10 hover:text-success transition-colors"
-                          onClick={(e) => e.preventDefault()}
+                          className={cn(
+                            "p-1.5 rounded hover:bg-success/10 hover:text-success transition-colors",
+                            a.myVote === "up" && "text-success bg-success/10"
+                          )}
+                          onClick={(e) => {
+                            e.preventDefault();
+                            void handleVote(a.id, "up");
+                          }}
+                          disabled={Boolean(votingIds[a.id])}
                         >
                           <ThumbsUp className="h-4 w-4" />
                         </button>
@@ -105,8 +163,15 @@ const Community = () => {
                           {(a.upvotes - a.downvotes).toLocaleString()}
                         </span>
                         <button
-                          className="p-1.5 rounded hover:bg-destructive/10 hover:text-destructive transition-colors"
-                          onClick={(e) => e.preventDefault()}
+                          className={cn(
+                            "p-1.5 rounded hover:bg-destructive/10 hover:text-destructive transition-colors",
+                            a.myVote === "down" && "text-destructive bg-destructive/10"
+                          )}
+                          onClick={(e) => {
+                            e.preventDefault();
+                            void handleVote(a.id, "down");
+                          }}
+                          disabled={Boolean(votingIds[a.id])}
                         >
                           <ThumbsDown className="h-4 w-4" />
                         </button>

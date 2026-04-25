@@ -34,6 +34,7 @@ from models.dispute import DisputeErrorCode, DisputeStatus
 from schema.dispute import DisputeRequest
 from services.score_service import apply_score_impact, calculate_score_impact
 from services.verification_service import verify_dispute
+from google.cloud import firestore as gcloud_firestore
 
 logger = logging.getLogger(__name__)
 
@@ -179,6 +180,13 @@ async def create_dispute(current_user: dict, request: DisputeRequest) -> dict:
 
     dispute_ref = db_async.collection("disputes").document(dispute_id)
     await dispute_ref.set(dispute_doc)
+    await post_ref.set(
+        {
+            "disputes": gcloud_firestore.Increment(1),
+            "updated_at": datetime.now(timezone.utc),
+        },
+        merge=True,
+    )
     logger.info("Dispute %s created (PENDING) for post %s", dispute_id, post_id)
 
     # ── Extract claim text + current verdict ──────────────────────────────────

@@ -2,15 +2,28 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Shield, Menu, ChevronLeft, ChevronRight, BarChart2, Users, Info, X } from "lucide-react";
+import { Shield, Menu, ChevronLeft, ChevronRight, BarChart2, Users, Info, X, LogOut, UserCircle2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
+import { auth } from "@/lib/firebase";
+import { onAuthStateChanged, signOut, User } from "firebase/auth";
 
 export const NavigationSidebar = () => {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [user, setUser] = useState<User | null>(null);
+
+  useEffect(() => {
+    const unsub = onAuthStateChanged(auth, (nextUser) => setUser(nextUser));
+    return () => unsub();
+  }, []);
+
+  const handleLogout = async () => {
+    await signOut(auth);
+    setMobileOpen(false);
+  };
 
   const links = [
     { href: "/analyze", label: "Analyze", icon: BarChart2 },
@@ -68,6 +81,32 @@ export const NavigationSidebar = () => {
             <span className={cn(collapsed && "md:hidden")}>New Analysis</span>
           </Link>
         </Button>
+        {user && (
+          <div className={cn("mt-3 rounded-lg border border-border/60 bg-secondary/20 p-2.5", collapsed && "md:px-1.5 md:py-2")}>
+            <div className={cn("flex items-center gap-2", collapsed && "md:justify-center")}>
+              {user.photoURL ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={user.photoURL} alt={user.displayName || "Profile"} className="h-8 w-8 rounded-full shrink-0" />
+              ) : (
+                <UserCircle2 className="h-8 w-8 text-muted-foreground shrink-0" />
+              )}
+              <div className={cn("min-w-0", collapsed && "md:hidden")}>
+                <p className="text-sm font-medium truncate">{user.displayName || "Signed in"}</p>
+                <p className="text-xs text-muted-foreground truncate">{user.email || "No email"}</p>
+              </div>
+            </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              className={cn("mt-2 w-full justify-start text-muted-foreground hover:text-foreground", collapsed && "md:justify-center md:px-0")}
+              onClick={handleLogout}
+              title={collapsed ? "Logout" : undefined}
+            >
+              <LogOut className="h-4 w-4" />
+              <span className={cn(collapsed && "md:hidden")}>Logout</span>
+            </Button>
+          </div>
+        )}
       </div>
     </>
   );

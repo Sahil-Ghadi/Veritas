@@ -42,6 +42,7 @@ export interface Analysis {
   downvotes: number;
   disputes: number;
   tags: string[];
+  myVote?: "up" | "down" | "none";
 }
 
 export interface ActivityItem {

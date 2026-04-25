@@ -43,6 +43,9 @@ type AnalysisListItem = {
   raw_input?: string;
   created_at?: string;
   result?: AnalyzeResultResponse["result"];
+  upvotes?: number;
+  downvotes?: number;
+  disputes?: number;
 };
 
 const mapVerdict = (value?: "supported" | "contradicted" | "uncertain" | "unverifiable"): Verdict => {
@@ -118,18 +121,37 @@ const toAnalysis = (item: AnalysisListItem): Analysis => {
     falseDetails: (item.result?.claims || []).map((c) => c.false_detail).filter((v): v is string => Boolean(v)),
     uncertainDetails: (item.result?.claims || []).map((c) => c.uncertainty_reason).filter((v): v is string => Boolean(v)),
     claims,
-    upvotes: 0,
-    downvotes: 0,
-    disputes: 0,
+    upvotes: Number(item.upvotes || 0),
+    downvotes: Number(item.downvotes || 0),
+    disputes: Number(item.disputes || 0),
     tags: ["analysis"],
+    myVote: "none",
   };
 };
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE_URL}${path}`, init);
   if (!response.ok) {
-    const message = await response.text();
-    throw new Error(message || `Request failed with status ${response.status}`);
+    const raw = await response.text();
+    let parsed: { detail?: string | { error?: string; code?: string }; error?: string } | null = null;
+    try {
+      parsed = JSON.parse(raw) as { detail?: string | { error?: string; code?: string }; error?: string };
+    } catch {
+      parsed = null;
+    }
+    if (parsed) {
+      if (typeof parsed.detail === "string") {
+        throw new Error(parsed.detail);
+      }
+      if (parsed.detail && typeof parsed.detail === "object" && parsed.detail.error) {
+        const code = parsed.detail.code ? ` (${parsed.detail.code})` : "";
+        throw new Error(`${parsed.detail.error}${code}`);
+      }
+      if (parsed.error) {
+        throw new Error(parsed.error);
+      }
+    }
+    throw new Error(raw || `Request failed with status ${response.status}`);
   }
   return response.json();
 }
@@ -194,6 +216,21 @@ export async function submitDispute(payload: {
     },
     body: JSON.stringify(payload),
   });
+}
+
+export async function castVote(postId: string, vote: "up" | "down" | "none") {
+  const token = await auth.currentUser?.getIdToken();
+  return request<{ post_id: string; upvotes: number; downvotes: number; my_vote: "up" | "down" | "none" }>(
+    `/api/posts/${postId}/vote`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({ vote }),
+    }
+  );
 }
 
 export function buildRecentActivity(analyses: Analysis[]): ActivityItem[] {

@@ -4,6 +4,7 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException
 from pydantic import BaseModel, Field
 from typing import Optional, Dict
 from datetime import datetime, timezone
+from core.firebase import db_async
 
 router = APIRouter(prefix="/api", tags=["analyze"])
 
@@ -34,6 +35,56 @@ class AnalysisListItem(BaseModel):
     raw_input: Optional[str] = None
     created_at: Optional[str] = None
     result: Optional[dict] = None
+    upvotes: int = 0
+    downvotes: int = 0
+    disputes: int = 0
+
+
+async def _upsert_post_from_job(job_id: str, job: dict) -> None:
+    """Ensure a Firestore post doc exists for dispute/vote features."""
+    if job.get("status") != "done":
+        return
+    result = job.get("result") or {}
+    claims = result.get("claims") or []
+    post_claims = [
+        {
+            "text": c.get("claim", ""),
+            "verdict": c.get("verdict", "uncertain"),
+            "confidence": c.get("confidence", 0.0),
+        }
+        for c in claims
+    ]
+    post_doc = {
+        "id": job_id,
+        "poster_id": "system",
+        "source": "analysis_pipeline",
+        "input_type": job.get("input_type", "text"),
+        "raw_input": job.get("raw_input", ""),
+        "summary": result.get("explanation", ""),
+        "essence": result.get("essence", ""),
+        "ai_score": result.get("ai_score", 0.5),
+        "claims": post_claims,
+        "upvotes": int(job.get("upvotes", 0) or 0),
+        "downvotes": int(job.get("downvotes", 0) or 0),
+        "disputes": int(job.get("disputes", 0) or 0),
+        "created_at": job.get("created_at"),
+        "updated_at": datetime.now(timezone.utc),
+    }
+    await db_async.collection("posts").document(job_id).set(post_doc, merge=True)
+
+
+async def _sync_job_counts_from_post(job_id: str) -> None:
+    """Reflect persisted post vote/dispute counters back into job store."""
+    job = _job_store.get(job_id)
+    if not job:
+        return
+    post_snap = await db_async.collection("posts").document(job_id).get()
+    if not post_snap.exists:
+        return
+    post = post_snap.to_dict() or {}
+    job["upvotes"] = int(post.get("upvotes", 0) or 0)
+    job["downvotes"] = int(post.get("downvotes", 0) or 0)
+    job["disputes"] = int(post.get("disputes", 0) or 0)
 
 async def _run_pipeline(job_id: str, raw_input: str, input_type: str):
     from agent.pipeline import pipeline
@@ -85,6 +136,9 @@ async def _run_pipeline(job_id: str, raw_input: str, input_type: str):
             "input_type": current_job.get("input_type", input_type),
             "raw_input": current_job.get("raw_input", raw_input),
             "created_at": current_job.get("created_at"),
+            "upvotes": current_job.get("upvotes", 0),
+            "downvotes": current_job.get("downvotes", 0),
+            "disputes": current_job.get("disputes", 0),
             "result": {
                 "ai_score": final_state.get("ai_score"),
                 "essence": final_state.get("essence"),
@@ -92,6 +146,7 @@ async def _run_pipeline(job_id: str, raw_input: str, input_type: str):
                 "claims": final_state.get("claim_results", []),
             },
         }
+        await _upsert_post_from_job(job_id, _job_store[job_id])
     except Exception as exc:
         print(f"[analyze] pipeline failed for job {job_id}: {exc}")
         traceback.print_exc()
@@ -125,6 +180,8 @@ async def get_results(job_id: str):
     job = _job_store.get(job_id)
     if job is None:
         raise HTTPException(404, "Job not found")
+    await _upsert_post_from_job(job_id, job)
+    await _sync_job_counts_from_post(job_id)
     return ResultResponse(job_id=job_id, **job)
 
 
@@ -132,6 +189,7 @@ async def get_results(job_id: str):
 async def list_results():
     items: list[AnalysisListItem] = []
     for job_id, job in _job_store.items():
+        await _sync_job_counts_from_post(job_id)
         items.append(
             AnalysisListItem(
                 job_id=job_id,
@@ -141,6 +199,9 @@ async def list_results():
                 raw_input=job.get("raw_input"),
                 created_at=job.get("created_at"),
                 result=job.get("result"),
+                upvotes=job.get("upvotes", 0),
+                downvotes=job.get("downvotes", 0),
+                disputes=job.get("disputes", 0),
             )
         )
     return items

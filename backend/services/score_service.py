@@ -68,7 +68,8 @@ def calculate_score_impact(
     -0.0
     """
     direction = 1.0 if is_supporting else -1.0
-    raw = direction * 15.0 * (confidence * 0.5 + source_credibility * 0.3 + claim_centrality * 0.2)
+    # Reduced impact: 30% of the original 15.0 base is 4.5
+    raw = direction * 4.5 * (confidence * 0.5 + source_credibility * 0.3 + claim_centrality * 0.2)
     return round(raw, 2)
 
 

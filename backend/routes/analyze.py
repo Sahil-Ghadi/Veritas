@@ -35,6 +35,9 @@ class ResultResponse(BaseModel):
     cached: bool = False
     submitted_by: Optional[str] = None
     my_vote: Optional[str] = None
+    upvotes: int = 0
+    downvotes: int = 0
+    disputes: int = 0
     result: Optional[dict] = None
     error: Optional[str] = None
 
@@ -296,10 +299,23 @@ async def get_results(job_id: str, req: Request):
     uid = user_info.get("uid")
     job = _job_store.get(job_id)
 
-    if job is not None:
-        # Live in-memory job — sync counters and return as usual
-        await _upsert_post_from_job(job_id, job)
+    if job is not None and job.get("status") == "done":
+        # Even if in memory, sync from Firestore to get latest disputes/votes
         await _sync_job_counts_from_post(job_id)
+        post_snap = await db_async.collection("posts").document(job.get("post_id") or job_id).get()
+        if post_snap.exists:
+            post = post_snap.to_dict() or {}
+            job["result"] = {
+                "ai_score": post.get("ai_score"),
+                "essence": post.get("essence", ""),
+                "explanation": post.get("summary", ""),
+                "claims": post.get("claims", []),
+            }
+            job["upvotes"] = int(post.get("upvotes", 0) or 0)
+            job["downvotes"] = int(post.get("downvotes", 0) or 0)
+            job["disputes"] = int(post.get("disputes", 0) or 0)
+
+    if job is not None:
         await _sync_user_vote(job_id, uid)
         return ResultResponse(job_id=job_id, **job)
 
@@ -363,6 +379,9 @@ async def get_results(job_id: str, req: Request):
         cached=False,
         submitted_by=post.get("submitted_by", "community"),
         my_vote=my_vote,
+        upvotes=int(post.get("upvotes", 0) or 0),
+        downvotes=int(post.get("downvotes", 0) or 0),
+        disputes=int(post.get("disputes", 0) or 0),
         result=result_dict,
     )
 

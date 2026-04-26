@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ThumbsUp, ThumbsDown, MessageSquareWarning, AlertTriangle, HelpCircle, Sparkles, Share2, Check, Download, Copy, Image as ImageIcon } from "lucide-react";
 import Link from "next/link";
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { castVote } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
@@ -30,6 +30,16 @@ export const AnalysisResult = ({ analysis, cached = false }: { analysis: Analysi
     downvotes: analysis.downvotes,
     myVote: analysis.myVote || "none" as "up" | "down" | "none",
   });
+
+  // Sync local state with fresh props (e.g. after a dispute refresh)
+  useEffect(() => {
+    setLocalVotes({
+      upvotes: analysis.upvotes,
+      downvotes: analysis.downvotes,
+      myVote: analysis.myVote || "none",
+    });
+  }, [analysis.upvotes, analysis.downvotes, analysis.myVote]);
+
   const [isVoting, setIsVoting] = useState(false);
   const [copied, setCopied] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
@@ -240,13 +250,6 @@ export const AnalysisResult = ({ analysis, cached = false }: { analysis: Analysi
           <Card className="p-6 bg-gradient-card">
             <h3 className="font-serif text-xl mb-3">Final Evaluation</h3>
             <p className="text-foreground/85 leading-relaxed">{analysis.reasoning}</p>
-            <div className="mt-4 flex flex-wrap gap-2">
-              {analysis.tags.map((t) => (
-                <span key={t} className="text-xs px-2 py-1 rounded-full bg-secondary text-muted-foreground font-mono">
-                  #{t}
-                </span>
-              ))}
-            </div>
           </Card>
         </TabsContent>
 

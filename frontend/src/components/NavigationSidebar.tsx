@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { Shield, Menu, ChevronLeft, ChevronRight, BarChart2, Users, Info, X, LogOut, UserCircle2 } from "lucide-react";
 import { Button } from "@/components/ui/button";

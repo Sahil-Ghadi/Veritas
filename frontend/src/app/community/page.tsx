@@ -238,17 +238,12 @@ const Community = () => {
                           </div>
 
                           <div className="flex items-center gap-4 mt-4 pt-4 border-t border-border/40 text-xs text-muted-foreground font-mono">
-                            <span>@{a.submittedBy}</span>
-                            <span>·</span>
                             <span>{a.submittedAt}</span>
                             <span>·</span>
                             <span className="flex items-center gap-1">
                               <MessageSquareWarning className="h-3 w-3 text-warning" />
                               {a.disputes} disputes
                             </span>
-                            {a.tags.slice(0, 2).map((t) => (
-                              <span key={t} className="hidden md:inline px-2 py-0.5 rounded-full bg-secondary">#{t}</span>
-                            ))}
                           </div>
                         </div>
                       </div>

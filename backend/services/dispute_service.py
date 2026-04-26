@@ -241,16 +241,13 @@ async def create_dispute(current_user: dict, request: DisputeRequest) -> dict:
 
     # ── Calculate score impact ─────────────────────────────────────────────────
     confidence: float = float(verification_result.get("confidence", 0.5))
-    raw_verdict: str = verification_result.get("new_verdict", "").upper()
     
-    # Map backend labels to frontend expected values
-    verdict_map = {
-        "SUPPORTED": "supported",
-        "CONTRADICTED": "contradicted",
-        "CONTESTED": "uncertain",
-        "UNVERIFIABLE": "unverifiable"
-    }
-    new_verdict = verdict_map.get(raw_verdict, "uncertain")
+    # User rule: if original is false -> make it true, else -> make it false
+    if current_verdict.lower() in ["false", "mostly-false", "contradicted"]:
+        new_verdict = "supported"
+    else:
+        new_verdict = "contradicted"
+        
     is_supporting: bool = (new_verdict == "supported")
 
     impact: float = calculate_score_impact(

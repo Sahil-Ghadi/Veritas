@@ -6,8 +6,11 @@ import { Providers } from "@/components/Providers";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "Claim Compass",
-  description: "Fake news detection application",
+  title: "Veritas",
+  description: "AI-Powered Fact-Checking Platform",
+  icons: {
+    icon: "/logo.png",
+  },
 };
 
 export default function RootLayout({

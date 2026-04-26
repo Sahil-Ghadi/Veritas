@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { SiteFooter } from "@/components/SiteFooter";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -23,6 +24,7 @@ import {
   Eye,
   MessageSquareWarning,
   Shield,
+  CheckCircle2,
 } from "lucide-react";
 
 const Landing = () => {
@@ -206,6 +208,60 @@ const Landing = () => {
               "In an age of synthetic media, the only defense is{" "}
               <span className="not-italic font-medium text-accent">verifiable transparency.</span>"
             </p>
+          </div>
+        </section>
+
+        {/* WHATSAPP INTEGRATION */}
+        <section className="container py-24 bg-secondary/20 rounded-3xl mb-20 overflow-hidden relative">
+          <div className="absolute top-0 right-0 w-96 h-96 bg-primary/5 rounded-full blur-3xl -translate-y-1/2 translate-x-1/3" />
+          
+          <div className="flex flex-col lg:flex-row items-center gap-12 relative z-10">
+            <div className="flex-1 text-center lg:text-left">
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-success/10 text-success text-xs font-mono mb-4">
+                <Zap className="h-3 w-3" /> Live on WhatsApp
+              </div>
+              <h2 className="font-display text-4xl md:text-5xl font-medium mb-6 text-balance">
+                Verify news without<br />
+                <span className="italic font-light">leaving the chat.</span>
+              </h2>
+              <p className="text-lg text-muted-foreground mb-8 max-w-xl leading-relaxed">
+                Forward any suspicious link or text to the Veritas WhatsApp bot. We'll run it through our pipeline and send you the full verdict in seconds.
+              </p>
+              
+              <div className="space-y-4">
+                {[
+                  "1. Add +1 (415) 523-8886 to contacts",
+                  "2. Send message: 'join path-short'",
+                  "3. Forward any article to get a verdict",
+                ].map((step, i) => (
+                  <div key={i} className="flex items-center gap-3 text-sm font-medium">
+                    <CheckCircle2 className="h-4 w-4 text-success" />
+                    {step}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex-1 flex justify-center">
+              <div className="relative group">
+                <div className="absolute -inset-4 bg-gradient-to-r from-success/20 to-primary/20 rounded-2xl blur-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+                <Card className="relative p-8 bg-card border-border/60 shadow-elegant flex flex-col items-center">
+                  <div className="bg-white p-4 rounded-xl mb-6 shadow-inner overflow-hidden">
+                    <Image 
+                      src="/Veritas.png" 
+                      alt="WhatsApp QR Code" 
+                      width={192} 
+                      height={192} 
+                      className="rounded-lg object-cover"
+                    />
+                  </div>
+                  <div className="text-center">
+                    <p className="text-sm font-mono font-bold text-foreground mb-1">SCAN TO START</p>
+                    <p className="text-xs text-muted-foreground">Open WhatsApp and scan</p>
+                  </div>
+                </Card>
+              </div>
+            </div>
           </div>
         </section>
 

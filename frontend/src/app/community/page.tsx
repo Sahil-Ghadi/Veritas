@@ -25,6 +25,7 @@ const Community = () => {
   const [active, setActive] = useState("trending");
   const [analyses, setAnalyses] = useState<Analysis[]>([]);
   const [votingIds, setVotingIds] = useState<Record<string, boolean>>({});
+  const [searchQuery, setSearchQuery] = useState("");
 
   const [isLoading, setIsLoading] = useState(true);
 
@@ -44,17 +45,29 @@ const Community = () => {
   }, []);
 
   const visibleAnalyses = useMemo(() => {
-    if (active === "recent") return analyses;
-    if (active === "disputed") return analyses.filter((a) => (a.disputes || 0) > 0);
-    if (active === "top") return [...analyses].sort((a, b) => (b.upvotes - b.downvotes) - (a.upvotes - a.downvotes));
-    
-    // For 'trending', sort by total engagement (votes + disputes)
-    return [...analyses].sort((a, b) => {
-      const engA = (a.upvotes || 0) + (a.downvotes || 0) + (a.disputes || 0) * 2;
-      const engB = (b.upvotes || 0) + (b.downvotes || 0) + (b.disputes || 0) * 2;
-      return engB - engA;
-    });
-  }, [active, analyses]);
+    let sorted: Analysis[];
+    if (active === "recent") sorted = analyses;
+    else if (active === "disputed") sorted = analyses.filter((a) => (a.disputes || 0) > 0);
+    else if (active === "top") sorted = [...analyses].sort((a, b) => (b.upvotes - b.downvotes) - (a.upvotes - a.downvotes));
+    else {
+      // For 'trending', sort by total engagement (votes + disputes)
+      sorted = [...analyses].sort((a, b) => {
+        const engA = (a.upvotes || 0) + (a.downvotes || 0) + (a.disputes || 0) * 2;
+        const engB = (b.upvotes || 0) + (b.downvotes || 0) + (b.disputes || 0) * 2;
+        return engB - engA;
+      });
+    }
+
+    if (!searchQuery.trim()) return sorted;
+    const q = searchQuery.toLowerCase();
+    return sorted.filter(
+      (a) =>
+        a.title.toLowerCase().includes(q) ||
+        a.summary.toLowerCase().includes(q) ||
+        a.tags.some((t) => t.toLowerCase().includes(q)) ||
+        a.submittedBy.toLowerCase().includes(q)
+    );
+  }, [active, analyses, searchQuery]);
 
   const handleVote = async (postId: string | undefined, vote: "up" | "down") => {
     if (!postId) return;
@@ -127,7 +140,17 @@ const Community = () => {
             <div className="flex flex-col md:flex-row gap-3 mb-6">
               <div className="relative flex-1">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input placeholder="Search analyses, claims, sources..." className="h-11 pl-10 bg-gradient-card border-border/60" />
+                <Input
+                  placeholder="Search analyses, claims, sources..."
+                  className="h-11 pl-10 bg-gradient-card border-border/60"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                />
+                {searchQuery.trim() && (
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-mono text-muted-foreground">
+                    {visibleAnalyses.length} result{visibleAnalyses.length !== 1 ? "s" : ""}
+                  </span>
+                )}
               </div>
               <div className="flex gap-1 p-1 bg-secondary/40 rounded-xl">
                 {filters.map((f) => (
@@ -234,7 +257,9 @@ const Community = () => {
                 ))
               ) : (
                 <Card className="p-6 text-sm text-muted-foreground bg-gradient-card border-border/60 text-center">
-                  No analyses available yet. Run an analysis from the analyze page and it will appear here.
+                  {searchQuery.trim()
+                    ? `No analyses match "${searchQuery}". Try a different search term.`
+                    : "No analyses available yet. Run an analysis from the analyze page and it will appear here."}
                 </Card>
               )}
             </div>

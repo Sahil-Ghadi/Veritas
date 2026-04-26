@@ -2,26 +2,28 @@
 
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { NavigationSidebar } from "@/components/NavigationSidebar";
 import { ActivitySidebar } from "@/components/ActivitySidebar";
 import { AnalysisResult } from "@/components/AnalysisResult";
-import { getAnalysisById, submitDispute, getDisputesByPostId } from "@/lib/api";
+import { getAnalysisById, submitDispute, getDisputesByPostId, getScoreHistory, ScoreHistoryEntry } from "@/lib/api";
 import { auth } from "@/lib/firebase";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ArrowLeft, MessageSquareWarning, Send, LogIn, AlertCircle, CheckCircle2, Loader2, History } from "lucide-react";
+import { ArrowLeft, MessageSquareWarning, Send, LogIn, AlertCircle, CheckCircle2, Loader2, History, TrendingUp } from "lucide-react";
 import { Analysis } from "@/lib/types";
 import { cn } from "@/lib/utils";
+import { ScoreHistoryChart } from "@/components/ScoreHistoryChart";
 
 const AnalysisDetail = () => {
   const params = useParams();
   const id = params?.id as string;
   const [analysis, setAnalysis] = useState<Analysis | null>(null);
   const [disputes, setDisputes] = useState<any[]>([]);
+  const [scoreHistory, setScoreHistory] = useState<ScoreHistoryEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -29,6 +31,7 @@ const AnalysisDetail = () => {
   const [disputeUrl, setDisputeUrl] = useState("");
   const [claimIndex, setClaimIndex] = useState(0);
   const [phase, setPhase] = useState<"idle" | "running" | "result" | "rejected" | "error">("idle");
+
   const [disputeMessage, setDisputeMessage] = useState("");
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
 
@@ -40,25 +43,31 @@ const AnalysisDetail = () => {
     return unsubscribe;
   }, []);
 
-  useEffect(() => {
-    const load = async () => {
-      try {
-        const data = await getAnalysisById(id);
-        if (!data) {
-          setError("Analysis not found.");
-        } else {
-          setAnalysis(data);
-          const disputesData = await getDisputesByPostId(data.postId || id);
-          setDisputes(disputesData);
-        }
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to load analysis.");
-      } finally {
-        setLoading(false);
+  const loadAnalysis = useCallback(async () => {
+    try {
+      const data = await getAnalysisById(id);
+      if (!data) {
+        setError("Analysis not found.");
+      } else {
+        setAnalysis(data);
+        const postId = data.postId || id;
+        const [disputesData, historyData] = await Promise.all([
+          getDisputesByPostId(postId),
+          getScoreHistory(postId)
+        ]);
+        setDisputes(disputesData);
+        setScoreHistory(historyData);
       }
-    };
-    if (id) void load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load analysis.");
+    } finally {
+      setLoading(false);
+    }
   }, [id]);
+
+  useEffect(() => {
+    if (id) void loadAnalysis();
+  }, [id, loadAnalysis]);
 
   const MIN_ARGUMENT_LENGTH = 20;
   const argumentTooShort = disputeText.trim().length > 0 && disputeText.trim().length < MIN_ARGUMENT_LENGTH;
@@ -85,8 +94,9 @@ const AnalysisDetail = () => {
       });
       if (response.status === "VALIDATED") {
         setDisputeMessage(
-          `Your dispute was validated! New credibility score: ${Math.round((response.new_score || 0) * 100)}%.`
+          `Your dispute was validated! New credibility score: ${Math.round(response.new_score || 0)}%.`
         );
+        void loadAnalysis();
       } else {
         setDisputeMessage(
           response.reason || "Your dispute was reviewed but could not be validated at this time."
@@ -134,8 +144,15 @@ const AnalysisDetail = () => {
 
             <AnalysisResult analysis={analysis} />
 
+            {/* Score History Chart */}
+            {scoreHistory.length > 1 && (
+              <div className="mt-8 animate-fade-in" style={{ animationDelay: "200ms" }}>
+                <ScoreHistoryChart data={scoreHistory} />
+              </div>
+            )}
+
             {/* Dispute section */}
-            <section id="dispute" className="mt-6 pt-6 border-t border-border/40">
+            <section id="dispute" className="mt-12 pt-6 border-t border-border/40">
               <div className="flex items-center gap-2 mb-2">
                 <MessageSquareWarning className="h-5 w-5 text-warning" />
                 <h2 className="font-serif text-2xl md:text-3xl font-semibold">Dispute this analysis</h2>

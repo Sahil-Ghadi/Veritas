@@ -314,3 +314,17 @@ export function buildRecentActivity(analyses: Analysis[]): ActivityItem[] {
     time: analysis.submittedAt,
   }));
 }
+
+export interface ScoreHistoryEntry {
+  date: string;
+  score: number;
+  reason: string;
+}
+
+export async function getScoreHistory(postId: string): Promise<ScoreHistoryEntry[]> {
+  try {
+    return await request<ScoreHistoryEntry[]>(`/api/posts/${postId}/score-history`);
+  } catch {
+    return [];
+  }
+}

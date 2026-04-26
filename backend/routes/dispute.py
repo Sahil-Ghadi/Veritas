@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import logging
 
-from core.firebase import verify_token
+from core.firebase import verify_token, db_async
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from models.dispute import DisputeErrorCode
 from schema.dispute import DisputeRequest
@@ -123,3 +123,64 @@ async def get_post_disputes(post_id: str):
             return disputes
         except Exception as inner_exc:
             raise HTTPException(500, f"Error fetching disputes: {inner_exc}")
+
+
+@router.get(
+    "/posts/{post_id}/score-history",
+    summary="Get the credibility score history for a post",
+    status_code=status.HTTP_200_OK,
+)
+async def get_score_history(post_id: str):
+    """
+    Returns the score_history array from the post document.
+    Each entry is: { date: str, score: float, reason: str }
+    The initial AI score is prepended as the baseline entry.
+    """
+    try:
+        snap = await db_async.collection("posts").document(post_id).get()
+        if not snap.exists:
+            raise HTTPException(status_code=404, detail="Post not found")
+
+        post = snap.to_dict() or {}
+        history = post.get("score_history", [])
+
+        # Normalise any datetime objects to ISO strings
+        normalised = []
+        for entry in history:
+            e = dict(entry)
+            if e.get("date") and not isinstance(e["date"], str):
+                try:
+                    e["date"] = e["date"].isoformat()
+                except Exception:
+                    e["date"] = str(e["date"])
+            normalised.append(e)
+
+        # Prepend the baseline AI score as the first data point
+        ai_score = post.get("ai_score")
+        created_at = post.get("created_at")
+        if created_at and not isinstance(created_at, str):
+            try:
+                created_at = created_at.isoformat()
+            except Exception:
+                created_at = str(created_at)
+
+        if ai_score is not None:
+            baseline_score = round(
+                (ai_score if ai_score > 1 else ai_score * 100), 2
+            )
+            baseline = {
+                "date": created_at or "",
+                "score": baseline_score,
+                "reason": "Initial AI analysis",
+            }
+            # Only prepend if history doesn't already have this entry
+            if not normalised or normalised[0].get("reason") != "Initial AI analysis":
+                normalised = [baseline] + normalised
+
+        return normalised
+
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error(f"Error fetching score history for post {post_id}: {exc}", exc_info=True)
+        raise HTTPException(500, f"Error fetching score history: {exc}")

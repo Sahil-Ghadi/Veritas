@@ -240,16 +240,23 @@ async def create_dispute(current_user: dict, request: DisputeRequest) -> dict:
         }
 
     # ── Calculate score impact ─────────────────────────────────────────────────
-    # source_credibility and claim_centrality default to 0.5 until real scorers
-    # are implemented (see score_service.py TODO comments).
     confidence: float = float(verification_result.get("confidence", 0.5))
-    new_verdict: str = verification_result.get("new_verdict", "").upper()
-    is_supporting: bool = (new_verdict == "SUPPORTED")
+    raw_verdict: str = verification_result.get("new_verdict", "").upper()
+    
+    # Map backend labels to frontend expected values
+    verdict_map = {
+        "SUPPORTED": "supported",
+        "CONTRADICTED": "contradicted",
+        "CONTESTED": "uncertain",
+        "UNVERIFIABLE": "unverifiable"
+    }
+    new_verdict = verdict_map.get(raw_verdict, "uncertain")
+    is_supporting: bool = (new_verdict == "supported")
 
     impact: float = calculate_score_impact(
         confidence=confidence,
-        source_credibility=0.5,  # TODO: replace with real source credibility scorer
-        claim_centrality=0.5,  # TODO: replace with real claim centrality scorer
+        source_credibility=0.5,
+        claim_centrality=0.5,
         is_supporting=is_supporting,
     )
 
@@ -264,6 +271,8 @@ async def create_dispute(current_user: dict, request: DisputeRequest) -> dict:
         impact=impact,
         reason=reason_label,
         validation_result=verification_result,
+        claim_index=claim_index,
+        new_verdict=new_verdict,
     )
 
     logger.info(

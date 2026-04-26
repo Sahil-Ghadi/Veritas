@@ -81,34 +81,36 @@ async def apply_score_impact(
     impact: float,
     reason: str,
     validation_result: dict,
+    claim_index: int | None = None,
+    new_verdict: str | None = None,
 ) -> float:
     """
     Atomically:
       • Update the post's ``credibility_score`` and append to ``score_history``.
+      • Update the specific claim's verdict if provided.
       • Update the dispute's ``status``, ``score_impact``, and
         ``validation_result``.
-
-    Both writes land in a single Firestore batch so they are always in sync —
-    a partial failure cannot leave the post updated but the dispute stale (or
-    vice versa).
 
     Args:
         post_ref:          AsyncDocumentReference for the post being disputed.
         dispute_ref:       AsyncDocumentReference for the dispute document.
-        impact:            The signed score delta (typically negative) produced
-                           by ``calculate_score_impact``.
-        reason:            Human-readable label stored in the score history entry.
-        validation_result: The full dict returned by the verification service,
-                           stored verbatim on the dispute document.
-
-    Returns:
-        The new credibility score after clamping to [0, ∞).
+        impact:            The signed score deltaProduced by ``calculate_score_impact``.
+        reason:            Human-readable label stored in the score history.
+        validation_result: The full verification result dict.
+        claim_index:       Index of the claim to update in the array.
+        new_verdict:       The new verdict string (e.g. 'mostly-true', 'false').
     """
-    # ── Read current score from Firestore (fresh read to avoid stale data) ─────
+    # ── Read current score and claims from Firestore ───────────────────────────
     post_snap = await post_ref.get()
     _post_raw: dict[str, Any] | None = post_snap.to_dict()
     post_data: dict[str, Any] = _post_raw if _post_raw is not None else {}
     current_score: float = float(post_data.get("credibility_score", 50.0))
+    claims = post_data.get("claims", [])
+
+    # ── Update claim verdict if index is valid ────────────────────────────────
+    if claim_index is not None and new_verdict and 0 <= claim_index < len(claims):
+        # Update the claim in the local copy
+        claims[claim_index]["verdict"] = new_verdict.lower()
 
     # ── Clamp: score must be between 0 and 100 ───────────────────────────────
     new_score = round(min(100.0, max(0.0, current_score + impact)), 2)
@@ -121,18 +123,19 @@ async def apply_score_impact(
     }
 
     # ── Batch commit ───────────────────────────────────────────────────────────
-    # db_async.batch() returns an AsyncWriteBatch whose .commit() is awaitable.
     batch = db_async.batch()
 
-    batch.update(
-        post_ref,
-        {
-            "credibility_score": new_score,
-            # ArrayUnion appends the entry without overwriting the existing array.
-            "score_history": gcloud_firestore.ArrayUnion([history_entry]),
-            "disputes": gcloud_firestore.Increment(1),
-        },
-    )
+    update_payload = {
+        "credibility_score": new_score,
+        "score_history": gcloud_firestore.ArrayUnion([history_entry]),
+        "disputes": gcloud_firestore.Increment(1),
+    }
+
+    # Only include claims in update if we actually modified it
+    if claim_index is not None:
+        update_payload["claims"] = claims
+
+    batch.update(post_ref, update_payload)
 
     batch.update(
         dispute_ref,

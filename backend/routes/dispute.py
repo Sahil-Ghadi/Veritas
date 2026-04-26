@@ -86,11 +86,15 @@ async def submit_dispute(
     status_code=status.HTTP_200_OK,
 )
 async def get_post_disputes(post_id: str):
+    """
+    Fetches all disputes for a post. 
+    Note: We fetch without order_by to avoid requiring a composite index 
+    on (post_id, created_at), sorting in Python instead.
+    """
     try:
         snaps = (
             await db_async.collection("disputes")
             .where("post_id", "==", post_id)
-            .order_by("created_at", direction=firestore.Query.DESCENDING)
             .get()
         )
         disputes = []
@@ -99,30 +103,19 @@ async def get_post_disputes(post_id: str):
             if d:
                 # Convert datetime to string
                 if d.get("created_at"):
-                    d["created_at"] = d["created_at"].isoformat()
+                    if not isinstance(d["created_at"], str):
+                        try:
+                            d["created_at"] = d["created_at"].isoformat()
+                        except Exception:
+                            d["created_at"] = str(d["created_at"])
                 disputes.append(d)
+        
+        # Sort by created_at descending in memory
+        disputes.sort(key=lambda x: x.get("created_at", ""), reverse=True)
         return disputes
     except Exception as exc:
         logger.error(f"Error fetching disputes for post {post_id}: {exc}", exc_info=True)
-        # fallback if index doesn't exist
-        try:
-            snaps = (
-                await db_async.collection("disputes")
-                .where("post_id", "==", post_id)
-                .get()
-            )
-            disputes = []
-            for snap in snaps:
-                d = snap.to_dict()
-                if d:
-                    if d.get("created_at"):
-                        d["created_at"] = d["created_at"].isoformat()
-                    disputes.append(d)
-            # sort in python
-            disputes.sort(key=lambda x: x.get("created_at", ""), reverse=True)
-            return disputes
-        except Exception as inner_exc:
-            raise HTTPException(500, f"Error fetching disputes: {inner_exc}")
+        raise HTTPException(500, f"Error fetching disputes: {exc}")
 
 
 @router.get(

@@ -7,11 +7,22 @@ import { CredibilityMeter } from "./CredibilityMeter";
 import { ClaimCard } from "./ClaimCard";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ThumbsUp, ThumbsDown, MessageSquareWarning, AlertTriangle, HelpCircle, Sparkles } from "lucide-react";
+import { ThumbsUp, ThumbsDown, MessageSquareWarning, AlertTriangle, HelpCircle, Sparkles, Share2, Check, Download, Copy, Image as ImageIcon } from "lucide-react";
 import Link from "next/link";
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { castVote } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
+import { toPng } from "html-to-image";
+import { AnalysisShareCard } from "./AnalysisShareCard";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 
 export const AnalysisResult = ({ analysis, cached = false }: { analysis: Analysis; cached?: boolean }) => {
   const [localVotes, setLocalVotes] = useState({
@@ -20,6 +31,44 @@ export const AnalysisResult = ({ analysis, cached = false }: { analysis: Analysi
     myVote: analysis.myVote || "none" as "up" | "down" | "none",
   });
   const [isVoting, setIsVoting] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
+  const shareCardRef = useRef<HTMLDivElement>(null);
+
+  const handleShare = async () => {
+    const url = `${window.location.origin}/analysis/${analysis.id}`;
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopied(true);
+      toast.success("Link copied to clipboard!");
+      setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      toast.error("Failed to copy link");
+    }
+  };
+
+  const handleDownloadImage = async () => {
+    const element = document.getElementById("analysis-share-card");
+    if (!element) return;
+    
+    try {
+      setIsExporting(true);
+      const dataUrl = await toPng(element, {
+        cacheBust: true,
+        backgroundColor: "hsl(var(--background))",
+      });
+      const link = document.createElement("a");
+      link.download = `veritas-analysis-${analysis.id.slice(0, 8)}.png`;
+      link.href = dataUrl;
+      link.click();
+      toast.success("Image generated and download started!");
+    } catch (err) {
+      toast.error("Failed to generate image");
+      console.error(err);
+    } finally {
+      setIsExporting(false);
+    }
+  };
 
   const handleVote = async (vote: "up" | "down") => {
     const postId = analysis.postId || analysis.id;
@@ -101,6 +150,66 @@ export const AnalysisResult = ({ analysis, cached = false }: { analysis: Analysi
             >
               <ThumbsDown className="h-3.5 w-3.5" /> {localVotes.downvotes}
             </Button>
+            <Dialog>
+              <DialogTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-1.5 transition-all duration-300"
+                >
+                  <Share2 className="h-3.5 w-3.5" /> Share
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="sm:max-w-[550px] bg-background border-border/60">
+                <DialogHeader>
+                  <DialogTitle>Share Analysis</DialogTitle>
+                  <DialogDescription>
+                    Share this verification with your network as a link or a high-quality image.
+                  </DialogDescription>
+                </DialogHeader>
+                
+                <div className="flex flex-col gap-6">
+                  {/* Real Card for Capture (Off-screen) */}
+                  <div className="fixed -left-[9999px] top-0 opacity-0 pointer-events-none">
+                    <AnalysisShareCard analysis={analysis} className="w-[500px] capture-card" />
+                  </div>
+
+                  {/* Preview Container - Responsive width, scrollable height */}
+                  <div className="relative group">
+                    <div className="flex justify-center bg-secondary/10 rounded-2xl p-2 md:p-6 border border-border/20">
+                      <div className="w-full max-w-[440px] max-h-[400px] overflow-y-auto rounded-xl shadow-lg border border-border/40 bg-background transition-shadow duration-500 group-hover:shadow-2xl group-hover:shadow-primary/5">
+                        <AnalysisShareCard analysis={analysis} className="w-full border-none shadow-none" />
+                      </div>
+                    </div>
+                    <div className="absolute inset-x-0 bottom-6 flex justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none">
+                      <div className="bg-background/80 backdrop-blur-sm px-3 py-1 rounded-full border border-border/40 text-[10px] font-medium text-muted-foreground shadow-sm">
+                        Scroll to preview full card
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col sm:grid sm:grid-cols-2 gap-3">
+                    <Button 
+                      onClick={handleShare} 
+                      variant="outline" 
+                      className={cn("h-11 gap-2 rounded-xl transition-all", copied && "text-success border-success/40 bg-success/5")}
+                    >
+                      {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+                      {copied ? "Link Copied!" : "Copy Link"}
+                    </Button>
+                    <Button 
+                      onClick={handleDownloadImage} 
+                      disabled={isExporting}
+                      className="h-11 gap-2 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 shadow-lg shadow-primary/20 transition-all active:scale-95"
+                    >
+                      {isExporting ? <Sparkles className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+                      {isExporting ? "Generating PNG" : "Download Image"}
+                    </Button>
+                  </div>
+                </div>
+              </DialogContent>
+            </Dialog>
+
             <Button variant="outline" size="sm" className="gap-1.5 ml-auto" asChild>
               <Link href={`/analysis/${analysis.id}#dispute`}>
                 <MessageSquareWarning className="h-3.5 w-3.5 text-warning" /> Dispute ({analysis.disputes})

@@ -1,8 +1,8 @@
-# 🔍 Odis — AI-Powered Fact-Checking Platform
+﻿# 🔍 Veritas — AI-Powered Fact-Checking Platform
 
 > **"Don't just read the news. Verify it."**
 
-Odis is a full-stack, production-grade fact-checking platform that fights misinformation by dissecting news articles, social media posts, and screenshots into atomic claims and verifying each one against live, multi-source web evidence. It combines a state-of-the-art LangGraph agentic AI pipeline with community-driven consensus to produce a final, transparent credibility verdict.
+Veritas is a full-stack, production-grade fact-checking platform that fights misinformation by dissecting news articles, social media posts, and screenshots into atomic claims and verifying each one against live, multi-source web evidence. It combines a state-of-the-art LangGraph agentic AI pipeline with community-driven consensus to produce a final, transparent credibility verdict.
 
 ---
 
@@ -29,13 +29,13 @@ Misinformation spreads because fact-checking is slow, opaque, and hard to access
 - Give you a verdict without explaining **why**
 - Have no mechanism for public correction or disagreement
 
-Odis solves this by giving anyone instant, transparent, claim-by-claim fact-checking with full evidence citations — and a community layer that can challenge and adjust the AI's conclusions.
+Veritas solves this by giving anyone instant, transparent, claim-by-claim fact-checking with full evidence citations — and a community layer that can challenge and adjust the AI's conclusions.
 
 ---
 
 ## 🌐 How It Works — The Big Picture
 
-A user submits a news article (via URL, text paste, or screenshot). Odis runs it through a 10-node agentic pipeline and returns a structured result within 30–60 seconds. This is what happens inside:
+A user submits a news article (via URL, text paste, or screenshot). Veritas runs it through a 10-node agentic pipeline and returns a structured result within 30–60 seconds. This is what happens inside:
 
 ```
 User Input
@@ -200,7 +200,7 @@ Persists the complete analysis result to **Firestore** under `analysis_cache/{sh
 
 ## 👥 Community Layer
 
-Beyond the AI pipeline, Odis includes a full community consensus system:
+Beyond the AI pipeline, Veritas includes a full community consensus system:
 
 ### Voting
 Authenticated users can upvote or downvote any analysis. Votes are stored in `post_votes/{post_id}:{uid}` and aggregated as `upvotes` and `downvotes` on the post document.
@@ -221,7 +221,7 @@ The `/community` page shows a live feed of all analyzed articles with their:
 ### WhatsApp Bot
 Users can submit news directly over WhatsApp:
 1. Send any news text or image to **+1 (415) 523-8886** with the code `join clean-water`
-2. Odis replies instantly with "Analyzing..." via Twilio
+2. Veritas replies instantly with "Analyzing..." via Twilio
 3. The analysis runs in a background **ARQ + Redis** queue
 4. A full verdict is sent back to the user's WhatsApp when complete
 
@@ -323,7 +323,7 @@ curl http://localhost:8000/api/results/abc123
 ## 📂 Project Structure
 
 ```
-Odis/
+Veritas/
 ├── backend/
 │   ├── main.py                    # FastAPI app entry point, route registration
 │   ├── requirements.txt

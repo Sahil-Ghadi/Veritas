@@ -9,32 +9,23 @@ load_dotenv()
 
 
 def init_firebase():
-    """Initialise Firebase Admin SDK. Uses FIREBASE_SERVICE_ACCOUNT_BASE64 or FIREBASE_SERVICE_ACCOUNT_PATH."""
+    """Initialise Firebase Admin SDK using FIREBASE_SERVICE_ACCOUNT_BASE64."""
     base64_content = os.getenv("FIREBASE_SERVICE_ACCOUNT_BASE64")
-    if base64_content:
-        try:
-            import base64, json
-            decoded = base64.b64decode(base64_content).decode('utf-8')
-            cred_dict = json.loads(decoded)
-            cred = credentials.Certificate(cred_dict)
-            firebase_admin.initialize_app(cred)
-            return
-        except Exception as e:
-            raise RuntimeError(f"FIREBASE_SERVICE_ACCOUNT_BASE64 set but invalid: {e}")
-
-    key_path = os.getenv("FIREBASE_SERVICE_ACCOUNT_PATH", "serviceAccountKey.json")
-    try:
-        cred = credentials.Certificate(key_path)
-        firebase_admin.initialize_app(cred)
-    except ValueError:
-        pass
-    except FileNotFoundError:
+    if not base64_content:
         env_vars = [k for k in os.environ.keys() if 'FIREBASE' in k or 'GOOGLE' in k]
         raise RuntimeError(
-            f"Firebase key not found at '{key_path}'. "
-            f"Set FIREBASE_SERVICE_ACCOUNT_BASE64 (has value: {bool(base64_content)}) "
-            f"or FIREBASE_SERVICE_ACCOUNT_PATH. Env vars found: {env_vars}"
+            f"FIREBASE_SERVICE_ACCOUNT_BASE64 not set. "
+            f"Env vars found: {env_vars}"
         )
+    
+    try:
+        import base64, json
+        decoded = base64.b64decode(base64_content).decode('utf-8')
+        cred_dict = json.loads(decoded)
+        cred = credentials.Certificate(cred_dict)
+        firebase_admin.initialize_app(cred)
+    except Exception as e:
+        raise RuntimeError(f"FIREBASE_SERVICE_ACCOUNT_BASE64 invalid: {e}")
 
 
 # Initialise SDK on module import

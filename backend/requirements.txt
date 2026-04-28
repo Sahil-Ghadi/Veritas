@@ -20,3 +20,7 @@ PyYAML
 tenacity
 numpy
 twilio
+langchain-huggingface
+langchain-text-splitters
+redis
+faiss-cpu

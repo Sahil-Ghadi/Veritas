@@ -19,4 +19,4 @@ python-multipart
 PyYAML
 tenacity
 numpy
-twillo
+twilio

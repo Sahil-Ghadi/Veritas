@@ -15,9 +15,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY . .
 
-# Create directory for Firebase service account
-RUN mkdir -p /app/keys
-
 # Expose port
 EXPOSE 8000
 

@@ -12,10 +12,25 @@ def init_firebase():
     """
     Initialise the Firebase Admin SDK once.
 
-    Reads the service-account key path from the FIREBASE_SERVICE_ACCOUNT_PATH
-    environment variable (set in .env).  Falls back to 'serviceAccountKey.json'
-    in the working directory so that local dev without a .env still works.
+    Supports both:
+    1. File path via FIREBASE_SERVICE_ACCOUNT_PATH
+    2. Base64 encoded content via FIREBASE_SERVICE_ACCOUNT_BASE64 (for deployment)
     """
+    # Check for base64 encoded content first (for Render/deployment)
+    base64_content = os.getenv("FIREBASE_SERVICE_ACCOUNT_BASE64")
+    if base64_content:
+        try:
+            import base64
+            import json
+            decoded = base64.b64decode(base64_content).decode('utf-8')
+            cred_dict = json.loads(decoded)
+            cred = credentials.Certificate(cred_dict)
+            firebase_admin.initialize_app(cred)
+            return
+        except Exception as e:
+            raise RuntimeError(f"Failed to decode FIREBASE_SERVICE_ACCOUNT_BASE64: {e}")
+    
+    # Fall back to file path (for local dev)
     key_path = os.getenv("FIREBASE_SERVICE_ACCOUNT_PATH", "serviceAccountKey.json")
     try:
         cred = credentials.Certificate(key_path)

@@ -21,8 +21,8 @@ services:
         sync: false
       - key: TAVILY_API_KEY
         sync: false
-      - key: FIREBASE_SERVICE_ACCOUNT_PATH
-        value: /app/keys/serviceAccountKey.json
+      - key: FIREBASE_SERVICE_ACCOUNT_BASE64
+        sync: false
       - key: ORIGINS_LIST
         sync: false
       - key: LLM_MODEL
@@ -48,5 +48,5 @@ services:
         sync: false
       - key: TAVILY_API_KEY
         sync: false
-      - key: FIREBASE_SERVICE_ACCOUNT_PATH
-        value: /app/keys/serviceAccountKey.json
+      - key: FIREBASE_SERVICE_ACCOUNT_BASE64
+        sync: false

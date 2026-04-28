@@ -10,7 +10,7 @@ settings = get_settings()
 
 app = FastAPI()
 
-# ── CORS ──────────────────────────────────────────────────────────────────────
+# CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings["origins_list"],
@@ -20,25 +20,66 @@ app.add_middleware(
 )
 
 
-# ── Startup ───────────────────────────────────────────────────────────────────
+# Startup
 @app.on_event("startup")
 async def startup():
     pass
 
 
-# ── Routes ────────────────────────────────────────────────────────────────────
+# Routes
 app.include_router(auth.router, prefix="/auth")
-app.include_router(analyze.router)          # prefix already set in router (/api)
+app.include_router(analyze.router)
 app.include_router(dispute.router, prefix="/api")
 app.include_router(vote.router, prefix="/api")
-app.include_router(whatsapp.router)   # POST /whatsapp/webhook
-app.include_router(chatbot_router)   # POST /chatbot/chat
+app.include_router(whatsapp.router)
+app.include_router(chatbot_router)
 
 
-# ── Health check ──────────────────────────────────────────────────────────────
 @app.get("/health", tags=["Health"])
 async def health():
-    return {"status": "ok", "env": settings["app_env"]}
+    """Check all critical services."""
+    import os
+    import asyncio
+    from core.firebase import db_async
+    from services.web_search import _get_tavily
+
+    checks = {
+        "env": settings["app_env"],
+        "firebase": "ok",
+        "gemini": "not_configured",
+        "tavily": "not_configured",
+        "redis": "not_configured",
+    }
+
+    # Check Gemini
+    gemini_key = os.getenv("GEMINI_API_KEY")
+    if gemini_key:
+        checks["gemini"] = "configured"
+
+    # Check Tavily
+    tavily_key = os.getenv("TAVILY_API_KEY")
+    if tavily_key:
+        try:
+            _get_tavily()
+            checks["tavily"] = "configured"
+        except Exception:
+            checks["tavily"] = "invalid_key"
+
+    # Check Redis
+    redis_url = os.getenv("REDIS_URL")
+    if redis_url:
+        checks["redis"] = "configured"
+
+    # Check Firebase
+    try:
+        await db_async.collection("health_check").document("ping").get()
+    except Exception:
+        checks["firebase"] = "error"
+
+    all_ok = all(v in ("ok", "configured") for v in checks.values())
+    status = "ok" if all_ok else "degraded"
+
+    return {"status": status, "checks": checks}
 
 
 if __name__ == "__main__":

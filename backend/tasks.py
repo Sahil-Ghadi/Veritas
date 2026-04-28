@@ -38,7 +38,7 @@ async def analyze_whatsapp_task(
             input_type = "url"
 
     try:
-        # ── Run the pipeline ──────────────────────────────────────────────────
+        # Run the pipeline
         result = await pipeline.ainvoke({
             "raw_input": raw_input,
             "input_type": input_type,
@@ -48,7 +48,7 @@ async def analyze_whatsapp_task(
         explanation: str = result.get("article_level_explanation", "")
         content_hash: str = result.get("content_hash", "")
 
-        # ── Pick an icon / label ──────────────────────────────────────────────
+        # Pick an icon / label
         if score >= 0.8:
             label = "✅ *TRUE*"
         elif score >= 0.55:

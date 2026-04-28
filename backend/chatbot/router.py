@@ -19,12 +19,9 @@ async def chat(request: ChatRequest):
 
 @router.get("/health")
 async def health():
-    """Check if Ollama is reachable."""
-    try:
-        async with httpx.AsyncClient(timeout=2.0) as client:
-            resp = await client.get("http://127.0.0.1:11434/api/tags")
-            if resp.status_code == 200:
-                return {"status": "ok", "ollama": "connected"}
-            return {"status": "warning", "ollama": "unreachable", "code": resp.status_code}
-    except Exception as e:
-        return {"status": "error", "ollama": "disconnected", "error": str(e)}
+    """Check if Gemini API key is configured."""
+    import os
+    api_key = os.getenv("GEMINI_API_KEY")
+    if api_key:
+        return {"status": "ok", "gemini": "configured"}
+    return {"status": "error", "gemini": "not_configured", "error": "GEMINI_API_KEY not set"}

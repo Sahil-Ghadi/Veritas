@@ -27,7 +27,7 @@ _CACHE_COLLECTION = "analysis_cache"
 _CACHE_TTL_DAYS = 7
 _MAX_CLAIMS = 4
 
-# Node 1 — Cache Check
+# Node 1: Cache Check
 async def cache_check_node(state: GraphState) -> dict:
     """
     Hash raw_input → query Firestore analysis_cache.
@@ -69,7 +69,7 @@ async def cache_check_node(state: GraphState) -> dict:
 
     return {"cached": False, "cached_result": None, "content_hash": raw_hash}
 
-# Node 2 — Input Parser
+# Node 2: Input Parser
 async def input_parser_node(state: GraphState) -> dict:
     """
     Fetch/parse the article text.
@@ -79,7 +79,7 @@ async def input_parser_node(state: GraphState) -> dict:
     result = await parse_input(state["raw_input"], state["input_type"])
     return {"parsed_text": result["parsed_text"]}
 
-# Node 3 — Essence Extractor
+# Node 3: Essence Extractor
 async def essence_extractor_node(state: GraphState) -> dict:
     prompt = ESSENCE_PROMPT.format(article_text=state["parsed_text"][:6000])
     structured_llm = model.with_structured_output(EssenceOutput)
@@ -113,7 +113,7 @@ async def essence_extractor_node(state: GraphState) -> dict:
         
     return out
 
-# Node 4 — Claim Splitter
+# Node 4: Claim Splitter
 async def claim_splitter_node(state: GraphState) -> dict:
     prompt = CLAIM_SPLIT_PROMPT.format(
         essence=state["essence"],
@@ -131,7 +131,7 @@ async def claim_splitter_node(state: GraphState) -> dict:
         "drift_score": drift_result["drift_score"],
     }
 
-# Node 5 — Claim Router
+# Node 5: Claim Router
 from langgraph.types import Send
 def claim_router_node(state: GraphState) -> List[Send]:
     """
@@ -149,7 +149,7 @@ def claim_router_node(state: GraphState) -> List[Send]:
         for claim in state["claims"]
     ]
 
-# Node 6 — Query Builder
+# Node 6: Query Builder
 async def query_builder_node(state: GraphState) -> dict:
     claim = state["current_claim"]
     prompt = QUERY_BUILDER_PROMPT.format(
@@ -167,7 +167,7 @@ async def query_builder_node(state: GraphState) -> dict:
         }
     }
 
-# Node 7 — Adversarial Searcher
+# Node 7: Adversarial Searcher
 async def adversarial_searcher_node(state: GraphState) -> dict:
     claim = state["current_claim"]
     search_result = await adversarial_search(
@@ -184,9 +184,7 @@ async def adversarial_searcher_node(state: GraphState) -> dict:
         }
     }
 
-# Sub-node for the LLM Judge Subgraph
-# Replaces the old alignment_node + judge_node two-step.
-# One LLM call per claim: classifies evidence AND renders verdict simultaneously.
+# Sub-node for LLM Judge Subgraph - one LLM call per claim
 async def evidence_judge_node(state: GraphState) -> dict:
     claim = state["current_claim"]
     results = state["current_search_results"]

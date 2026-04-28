@@ -1,25 +1,7 @@
 """
-Dispute service — primary orchestrator for the dispute lifecycle.
+Dispute service — orchestrates the dispute lifecycle.
 
-Flow:
-  1. Run all guard-rail checks in order (fail fast).
-  2. Write the dispute document with status=PENDING (so rate-limit and
-     duplicate checks are immediately accurate for concurrent requests).
-  3. Call the verification service.
-  4. If rejected → update dispute to REJECTED and return.
-  5. If valid    → call score_service.apply_score_impact (batch commit)
-                   and return the new score.
-
-Firestore collections used:
-  • posts      — keyed by post_id
-  • users      — keyed by uid
-  • disputes   — keyed by uuid4 string
-
-Composite indexes required in Firestore Console
-(queries will fail with an error pointing to the index creation URL):
-  • disputes: (disputer_id ASC, created_at ASC)
-  • disputes: (post_id ASC, claim_index ASC, disputer_id ASC)
-  • disputes: (post_id ASC, created_at ASC)
+Flow: guard-rail checks → write PENDING dispute → verification → scoring.
 """
 
 from __future__ import annotations
@@ -39,19 +21,13 @@ from google.cloud import firestore as gcloud_firestore
 logger = logging.getLogger(__name__)
 
 
-# ── Domain exception ───────────────────────────────────────────────────────────
-
-
 class DisputeError(Exception):
-    """Raised for all guard-rail failures. Carries a machine-readable code."""
+    """Raised for guard-rail failures with machine-readable code."""
 
     def __init__(self, code: DisputeErrorCode, message: str) -> None:
         self.code = code
         self.message = message
         super().__init__(message)
-
-
-# ── Public entry point ─────────────────────────────────────────────────────────
 
 
 async def create_dispute(current_user: dict, request: DisputeRequest) -> dict:
@@ -73,7 +49,7 @@ async def create_dispute(current_user: dict, request: DisputeRequest) -> dict:
     post_id: str = request.post_id
     claim_index: int = request.claim_index
 
-    # ── Guard rail 1 — post existence + self-dispute ───────────────────────────
+    # Guard rail 1: post existence + self-dispute
     post_ref = db_async.collection("posts").document(post_id)
     post_snap = await post_ref.get()
 
@@ -92,10 +68,7 @@ async def create_dispute(current_user: dict, request: DisputeRequest) -> dict:
             "You cannot dispute a claim on your own post.",
         )
 
-    # ── Guard rails 2 + 3 — single query, Python-side filtering ──────────────
-    # Firestore requires composite indexes for multi-field queries. To avoid
-    # that operational overhead we fetch ALL disputes by this user (single-field
-    # query, auto-indexed) and apply the duplicate / rate-limit checks in Python.
+    # Guard rails 2 + 3: single query, Python-side filtering
     user_dispute_snaps = (
         await db_async.collection("disputes")
         .where("disputer_id", "==", user_id)
@@ -109,13 +82,13 @@ async def create_dispute(current_user: dict, request: DisputeRequest) -> dict:
     today_count = 0
     for snap in user_dispute_snaps:
         d = snap.to_dict() or {}
-        # Guard rail 2 — exact duplicate on same post + claim
+        # Guard rail 2: exact duplicate on same post + claim
         if d.get("post_id") == post_id and d.get("claim_index") == claim_index:
             raise DisputeError(
                 DisputeErrorCode.ALREADY_DISPUTED,
                 "You have already submitted a dispute for this claim.",
             )
-        # Guard rail 3 — count today's disputes
+        # Guard rail 3: count today's disputes
         created = d.get("created_at")
         if created is not None:
             if hasattr(created, "tzinfo") and created.tzinfo is None:
@@ -129,9 +102,7 @@ async def create_dispute(current_user: dict, request: DisputeRequest) -> dict:
             "You have reached the daily limit of 10 disputes. Try again tomorrow.",
         )
 
-    # ── Guard rail 5 — post flood protection (20 disputes/hour cap) ────────────
-    # Fetch all disputes for this post and filter by timestamp in Python
-    # to avoid needing a composite index on (post_id, created_at).
+    # Guard rail 5: post flood protection (20 disputes/hour cap)
     one_hour_ago = datetime.now(timezone.utc) - timedelta(hours=1)
     post_dispute_snaps = (
         await db_async.collection("disputes")
@@ -157,7 +128,7 @@ async def create_dispute(current_user: dict, request: DisputeRequest) -> dict:
             "This post has received too many disputes recently and is under review.",
         )
 
-    # ── Write PENDING dispute (locks the slot before async verification) ───────
+    # Write PENDING dispute (locks slot before async verification)
     dispute_id = str(uuid.uuid4())
     now = datetime.now(timezone.utc)
     counter_source_str = (
@@ -188,7 +159,7 @@ async def create_dispute(current_user: dict, request: DisputeRequest) -> dict:
     )
     logger.info("Dispute %s created (PENDING) for post %s", dispute_id, post_id)
 
-    # ── Extract claim text + current verdict ──────────────────────────────────
+    # Extract claim text + current verdict
     claims: list = post_data.get("claims", [])
     claim_text = ""
     current_verdict = ""
@@ -197,7 +168,7 @@ async def create_dispute(current_user: dict, request: DisputeRequest) -> dict:
         claim_text = claim.get("text", "")
         current_verdict = claim.get("verdict", "")
 
-    # ── Call verification service ──────────────────────────────────────────────
+    # Call verification service
     try:
         verification_result = await verify_dispute(
             claim_text=claim_text,
@@ -206,7 +177,7 @@ async def create_dispute(current_user: dict, request: DisputeRequest) -> dict:
             counter_source_url=counter_source_str,
         )
     except Exception as exc:
-        # Verification failure: mark dispute as REJECTED with the error reason.
+        # Verification failure: mark dispute as REJECTED
         logger.error(
             "Verification error for dispute %s: %s", dispute_id, exc, exc_info=True
         )
@@ -221,7 +192,7 @@ async def create_dispute(current_user: dict, request: DisputeRequest) -> dict:
             "reason": "Verification service error. Please try again later.",
         }
 
-    # ── Process verification result ────────────────────────────────────────────
+    # Process verification result
     if not verification_result.get("dispute_valid", False):
         await dispute_ref.update(
             {
@@ -239,10 +210,10 @@ async def create_dispute(current_user: dict, request: DisputeRequest) -> dict:
             ),
         }
 
-    # ── Calculate score impact ─────────────────────────────────────────────────
+    # Calculate score impact
     confidence: float = float(verification_result.get("confidence", 0.5))
     
-    # User rule: if original is false -> make it true, else -> make it false
+    # User rule: false -> supported, else -> contradicted
     if current_verdict.lower() in ["false", "mostly-false", "contradicted"]:
         new_verdict = "supported"
     else:
@@ -257,7 +228,7 @@ async def create_dispute(current_user: dict, request: DisputeRequest) -> dict:
         is_supporting=is_supporting,
     )
 
-    # ── Atomic batch: update post score + dispute status ──────────────────────
+    # Atomic batch: update post score + dispute status
     reason_label = (
         f"Dispute validated (confidence={confidence:.2f}): "
         f"{verification_result.get('reason', '')}"

@@ -1,30 +1,5 @@
 """
 Score service — impact calculation and atomic Firestore score updates.
-
-Responsibilities:
-  1. calculate_score_impact  – pure function, no I/O, formula-driven.
-  2. apply_score_impact      – async; reads the post's current credibility_score,
-                               computes the new score, and commits a Firestore
-                               batch that atomically updates both the post
-                               (credibility_score + score_history) and the
-                               dispute document (status + score_impact +
-                               validation_result).
-
-TODO items for future sprints:
-  • Real source-credibility scorer:
-      Accept a domain extracted from counter_source_url and return a float in
-      [0, 1] by querying a trust database (e.g. a Firestore
-      'source_trust_scores' collection seeded from NewsGuard / MBFC data).
-      Replace the hardcoded 0.5 default in dispute_service.create_dispute.
-
-  • Real claim-centrality scorer:
-      Determine how central the disputed claim is to the overall post verdict
-      (e.g. via embedding similarity between the claim and the post summary).
-      Replace the hardcoded 0.5 default in dispute_service.create_dispute.
-
-  • Notification dispatch (post-commit):
-      After apply_score_impact returns, fire async notifications to both the
-      post owner (score changed) and the disputer (dispute resolved).
 """
 
 from __future__ import annotations
@@ -40,7 +15,7 @@ from models.dispute import DisputeStatus
 logger = logging.getLogger(__name__)
 
 
-# ── Impact formula ─────────────────────────────────────────────────────────────
+# Impact formula
 
 
 def calculate_score_impact(
@@ -73,7 +48,7 @@ def calculate_score_impact(
     return round(raw, 2)
 
 
-# ── Atomic score + dispute update ──────────────────────────────────────────────
+# Atomic score + dispute update
 
 
 async def apply_score_impact(

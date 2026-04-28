@@ -92,7 +92,7 @@ export const ChatbotCard: React.FC<{ onClose: () => void; analysis: Analysis }> 
         ...p,
         {
           role: "bot",
-          content: "Couldn't reach the AI right now. Is Ollama running at localhost:11434?",
+          content: "Couldn't reach the AI right now. Please check if GEMINI_API_KEY is configured.",
         },
       ]);
     } finally {

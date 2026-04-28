@@ -1,0 +1,52 @@
+services:
+  # Main FastAPI Backend
+  - type: web
+    name: odis-backend
+    env: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: REDIS_URL
+        sync: false
+      - key: TWILIO_ACCOUNT_SID
+        sync: false
+      - key: TWILIO_AUTH_TOKEN
+        sync: false
+      - key: TWILIO_WHATSAPP_NUMBER
+        sync: false
+      - key: TAVILY_API_KEY
+        sync: false
+      - key: FIREBASE_SERVICE_ACCOUNT_PATH
+        value: /app/keys/serviceAccountKey.json
+      - key: ORIGINS_LIST
+        sync: false
+      - key: LLM_MODEL
+        value: gemini-2.5-flash
+
+  # ARQ Worker (for background tasks)
+  - type: worker
+    name: odis-worker
+    env: docker
+    plan: free
+    dockerfilePath: ./Dockerfile.worker
+    dockerContext: .
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: REDIS_URL
+        sync: false
+      - key: TWILIO_ACCOUNT_SID
+        sync: false
+      - key: TWILIO_AUTH_TOKEN
+        sync: false
+      - key: TAVILY_API_KEY
+        sync: false
+      - key: FIREBASE_SERVICE_ACCOUNT_PATH
+        value: /app/keys/serviceAccountKey.json

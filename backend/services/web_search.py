@@ -6,9 +6,7 @@ from functools import lru_cache
 
 from tavily import AsyncTavilyClient
 
-# ── Singleton client ────────────────────────────────────────────────────────
-# Creating a new AsyncTavilyClient on every search call adds unnecessary
-# connection-setup overhead. We build it once and reuse it.
+# Singleton client - reuse connection to avoid overhead
 @lru_cache(maxsize=1)
 def _get_tavily() -> AsyncTavilyClient:
     api_key = os.getenv("TAVILY_API_KEY")
@@ -23,14 +21,6 @@ _SEARCH_TIMEOUT_S = 15  # hard cap per query — prevents pipeline stalls
 async def search(query: str, max_results: int = 4) -> list[dict]:
     """
     Run a single Tavily search query and return raw result list.
-
-    Performance notes:
-      - search_depth="basic" skips Tavily's deep-crawl pass (~40 % faster).
-      - include_raw_content is intentionally omitted (defaults to False);
-        fetching full page bodies was the single largest latency driver.
-        Titles + snippets are sufficient for alignment/judge.
-      - A hard asyncio timeout prevents one slow DNS/network hop from
-        blocking the whole pipeline.
     """
     client = _get_tavily()
     try:

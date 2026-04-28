@@ -1,9 +1,5 @@
 """
-ARQ Worker — run as a SEPARATE process:
-
-    arq worker.WorkerSettings
-
-Works with local Redis (redis://) and Upstash (rediss://) equally.
+ARQ Worker — run as a separate process.
 """
 import os
 from arq.connections import RedisSettings

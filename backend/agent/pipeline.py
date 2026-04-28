@@ -16,7 +16,7 @@ from schema.state import GraphState
 def build_pipeline():
     workflow = StateGraph(GraphState)
 
-    # ── Primary nodes ──────────────────────────────────────
+    # Primary nodes
     workflow.add_node("cache_check", cache_check_node)
     workflow.add_node("input_parser", input_parser_node)
     workflow.add_node("essence_extractor", essence_extractor_node)
@@ -25,21 +25,20 @@ def build_pipeline():
     workflow.add_node("explanation_generator", explanation_generator_node)
     workflow.add_node("cache_writer", cache_writer_node)
 
-    # ── Per-claim nodes (run in parallel via Send) ─────────
+    # Per-claim nodes (run in parallel via Send)
     workflow.add_node("claim_processing", claim_processing_subgraph)
 
-    # ── Entry ──────────────────────────────────────────────
+    # Entry
     workflow.set_entry_point("cache_check")
 
-    # Cache hit  → score_aggregator (claim_results already in state)
-    # Cache miss → full pipeline
+    # Cache hit → score_aggregator, Cache miss → full pipeline
     workflow.add_conditional_edges(
         "cache_check",
         lambda state: "score_aggregator" if state.get("cached") else "input_parser",
         {"score_aggregator": "score_aggregator", "input_parser": "input_parser"},
     )
 
-    # ── Linear pre-processing ──────────────────────────────
+    # Linear pre-processing
     workflow.add_edge("input_parser", "essence_extractor")
 
     def check_verifiable(state: GraphState):
@@ -53,19 +52,16 @@ def build_pipeline():
         {"cache_writer": "cache_writer", "claim_splitter": "claim_splitter"}
     )
 
-    # ── Fan-out: claim_splitter → N parallel claim branches ─
-    # claim_router_node returns List[Send("query_builder", per_claim_state)]
+    # Fan-out: claim_splitter → N parallel claim branches
     workflow.add_conditional_edges(
         "claim_splitter",
         claim_router_node,
     )
 
-    # ── Fan-in: all claim_processing branches → score_aggregator ──
-    # claim_results uses operator.add reducer so each branch's
-    # [ClaimResult] is appended rather than overwritten
+    # Fan-in: all claim_processing branches → score_aggregator
     workflow.add_edge("claim_processing", "score_aggregator")
 
-    # ── Linear post-processing ─────────────────────────────
+    # Linear post-processing
     workflow.add_edge("score_aggregator", "explanation_generator")
     workflow.add_edge("explanation_generator", "cache_writer")
     workflow.add_edge("cache_writer", END)

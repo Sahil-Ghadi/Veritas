@@ -1,5 +1,5 @@
 import os
-from langchain_ollama import ChatOllama
+from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_community.vectorstores import FAISS
 from langchain_core.prompts import PromptTemplate
@@ -36,7 +36,14 @@ _embeddings = None
 _vector_store = None
 
 def load_llm():
-    return ChatOllama(model="qwen2.5:3b", temperature=0.2, base_url="http://127.0.0.1:11434")
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        raise EnvironmentError("GEMINI_API_KEY not set in environment.")
+    return ChatGoogleGenerativeAI(
+        model=os.getenv("LLM_MODEL", "gemini-2.5-flash"),
+        google_api_key=api_key,
+        temperature=0.2,
+    )
 
 def get_vector_store():
     global _embeddings, _vector_store
@@ -59,7 +66,7 @@ async def get_chatbot_response(query: str, article_context: str = ""):
             return response.content
         except Exception as e:
             print(f"[chatbot] Error in engine with article: {e}")
-            return "I'm having trouble analyzing this article right now. Please check if Ollama is running at http://127.0.0.1:11434."
+            return "I'm having trouble analyzing this article right now. Please check if GEMINI_API_KEY is set correctly."
             
     db = get_vector_store()
     if db is None:
@@ -74,9 +81,9 @@ async def get_chatbot_response(query: str, article_context: str = ""):
         llm = load_llm()
         prompt = RAG_PROMPT_TEMPLATE.format(context=context, question=query)
         
-        # 3. Get response from Ollama
+        # 3. Get response from Gemini
         response = await llm.ainvoke(prompt)
         return response.content
     except Exception as e:
         print(f"[chatbot] Error in engine: {e}")
-        return "I'm having trouble accessing my knowledge base right now. Please check if Ollama is running at http://127.0.0.1:11434."
+        return "I'm having trouble accessing my knowledge base right now. Please check if GEMINI_API_KEY is set correctly."

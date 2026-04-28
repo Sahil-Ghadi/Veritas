@@ -1,23 +1,5 @@
-"""
-Dispute router — POST /disputes
-
-Resolves the current user from the existing verify_token dependency, delegates
-all business logic to dispute_service.create_dispute, and maps service-layer
-exceptions to appropriate HTTP responses.
-
-HTTP contract:
-  201  { status, score_impact, new_score }        — dispute validated
-  200  { status, reason }                          — dispute rejected (not an error)
-  404  { error, code }                             — post not found
-  403  { error, code }                             — guard-rail failure
-  422                                              — Pydantic validation error (automatic)
-  500  { detail: "Internal server error" }         — unexpected failure (logged server-side)
-"""
-
 from __future__ import annotations
-
 import logging
-
 from core.firebase import verify_token, db_async
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from models.dispute import DisputeErrorCode
@@ -42,10 +24,6 @@ async def submit_dispute(
 ) -> dict:
     """
     Submit a new dispute for a specific claim on a post.
-
-    Guard-rail failures return HTTP 403 with an error code in the body so the
-    client can display a user-friendly message without string-matching.
-    POST_NOT_FOUND returns HTTP 404 instead.
     """
     try:
         result = await create_dispute(current_user=current_user, request=body)

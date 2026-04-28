@@ -1,14 +1,7 @@
 """
 Dispute verification service.
 
-Real implementation:
-  1. Domain credibility scoring — scores the counter_source_url domain against
-     a tiered trust list (high/low/neutral).
-  2. Tavily evidence search — retrieves external articles that support or refute
-     the counter-argument.
-  3. Gemini LLM adjudication — structured-output call that weighs the claim,
-     current verdict, counter-argument, source credibility, and evidence to
-     produce a final dispute_valid / confidence / reason / new_verdict.
+Scores domain credibility, fetches evidence, and uses LLM to adjudicate disputes.
 """
 
 from __future__ import annotations
@@ -25,7 +18,7 @@ from services.input_parser import fetch_url_text
 logger = logging.getLogger(__name__)
 
 
-# ── Structured output schema ──────────────────────────────────────────────────
+# Structured output schema
 
 class VerificationOutput(BaseModel):
     dispute_valid: bool = Field(
@@ -53,7 +46,7 @@ class VerificationOutput(BaseModel):
     )
 
 
-# ── Domain credibility scorer ─────────────────────────────────────────────────
+# Domain credibility scorer
 
 _HIGH_CREDIBILITY = {
     "reuters.com", "apnews.com", "bbc.com", "bbc.co.uk",
@@ -90,7 +83,7 @@ def _score_domain(url: Optional[str]) -> float:
     return 0.5  # unknown domain — neutral
 
 
-# ── Prompt builder ────────────────────────────────────────────────────────────
+# Prompt builder
 
 def _build_adjudication_prompt(
     claim_text: str,
@@ -146,7 +139,7 @@ Suggest new_verdict from: SUPPORTED, CONTESTED, CONTRADICTED, UNVERIFIABLE.
 """
 
 
-# ── Main verification function ────────────────────────────────────────────────
+# Main verification function
 
 async def verify_dispute(
     claim_text: str,
@@ -172,7 +165,7 @@ async def verify_dispute(
             source_credibility  (float)  – domain credibility score used
         }
     """
-    # ── Step 1: Domain credibility + Content fetching ──────────────────────
+    # Step 1: Domain credibility + content fetching
     source_credibility = _score_domain(counter_source_url)
     logger.info(
         "verify_dispute | source_credibility=%.2f url=%s",
@@ -187,7 +180,7 @@ async def verify_dispute(
         except Exception as exc:
             logger.warning("Failed to fetch counter_source_url %s: %s", counter_source_url, exc)
 
-    # ── Step 2: LLM adjudication ───────────────────────────────────────────
+    # Step 2: LLM adjudication
     prompt = _build_adjudication_prompt(
         claim_text=claim_text,
         current_verdict=current_verdict,
